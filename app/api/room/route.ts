@@ -54,8 +54,8 @@ export async function POST(request: NextRequest) {
       redis.call('SET', KEYS[1], cjson.encode(room), 'EX', tonumber(ARGV[5]))
       return cjson.encode({ok=true, started=room.status == 'playing'})
     `;
-    const result = await redis.eval<string>(script, [key], [playerId, token, name, String(now), String(ROOM_TTL_SECONDS)]);
-    const joined = typeof result === "string" ? JSON.parse(result) : result;
+    const result = await redis.eval(script, [key], [playerId, token, name, String(now), String(ROOM_TTL_SECONDS)]);
+    const joined = JSON.parse(String(result)) as { error?: string; ok?: boolean };
     if (joined?.error) return error(joined.error);
     if (!joined?.ok) return error("Could not join that room. Please try again.");
     return NextResponse.json({ code, token, playerId });
