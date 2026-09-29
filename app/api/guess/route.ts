@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { countryByCode } from "@/lib/countries";
-import { redis, ROOM_TTL_SECONDS } from "@/lib/redis";
+import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
 
 export const runtime = "nodejs";
 const ROUND_MS = 10 * 60 * 1000;
@@ -9,6 +9,7 @@ type Room = { code: string; status: "waiting" | "playing" | "ended"; startedAt: 
 
 export async function POST(request: NextRequest) {
   try {
+    const redis = getRedis();
     const body = await request.json();
     const code = typeof body.code === "string" ? body.code.toUpperCase() : "";
     const token = typeof body.token === "string" ? body.token : "";

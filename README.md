@@ -5,8 +5,8 @@ A three-player country sprint hosted on Vercel. The room starts when player thre
 ## Online setup
 
 1. Push this repo to GitHub and import it into Vercel.
-2. In the Vercel project, open **Storage** and connect an **Upstash Redis** store from the Marketplace. You can let Vercel manage the Upstash account and billing.
-3. Redeploy the project. The integration adds the Redis credentials to the server environment.
+2. In Upstash, click **Connect to Project** and select this Vercel project. You can let Vercel manage the Upstash account and billing.
+3. Redeploy the project. The app detects the Redis REST variables added by the integration, including database-prefixed names such as bran_KV_REST_API_URL and bran_KV_REST_API_TOKEN.
 4. Share the deployed link with your two friends. One player creates a room and sends the six-character code.
 
 No SQL database or sign-in provider is needed. Room codes and private player tokens identify each player. The API keeps room state in Redis and only returns every player’s answers after the round ends.

@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { redis, ROOM_TTL_SECONDS } from "@/lib/redis";
+import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
 
 export const runtime = "nodejs";
 const MAX_PLAYERS = 3;
@@ -20,6 +20,7 @@ function validName(value: unknown): value is string {
 
 export async function POST(request: NextRequest) {
   try {
+    const redis = getRedis();
     const body = await request.json();
     if (!validName(body.name)) return error("Name must be 1–18 characters.");
     const name = body.name.trim();
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const redis = getRedis();
     const code = (request.nextUrl.searchParams.get("code") ?? "").toUpperCase();
     const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
     if (!/^[A-Z2-9]{6}$/.test(code) || token.length < 32) return error("Room session is invalid.", 401);
