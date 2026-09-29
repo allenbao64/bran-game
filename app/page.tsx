@@ -37,6 +37,7 @@ export default function Home() {
   const [left, setLeft] = useState(ROUND_SECONDS);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const input = useRef<HTMLInputElement>(null);
 
   const sync = useCallback(async (code: string, token: string) => {
@@ -57,7 +58,7 @@ export default function Home() {
       const session = JSON.parse(saved) as { code: string; token: string; playerId: string; name: string };
       setName(session.name);
       void sync(session.code, session.token).catch((error) => {
-        localStorage.removeItem(ROOM_KEY); setNotice(errorText(error));
+        setNotice(errorText(error));
       });
     } catch { localStorage.removeItem(ROOM_KEY); }
   }, [sync]);
@@ -81,18 +82,48 @@ export default function Home() {
   useEffect(() => { if (stage === "game") input.current?.focus(); }, [stage]);
 
   async function startRoom(event: FormEvent, action: "create" | "join") {
-    event.preventDefault(); setBusy(true); setNotice("");
+    event.preventDefault();
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setNotice("");
     try {
-      const data = await api<{ code: string; token: string; playerId: string }>("/api/room", {
+      const code = joinCode.trim().toUpperCase();
+      const saved = action === "join" ? localStorage.getItem(ROOM_KEY) : null;
+      if (saved) {
+        const session = JSON.parse(saved) as { code: string; token: string; playerId: string; name: string };
+        if (session.code === code) {
+          await sync(session.code, session.token);
+          return;
+        }
+      }
+      const data = await api<{
+        code: string; token: string; playerId: string; status: Room["status"];
+        startedAt: number | null; players: Player[];
+      }>("/api/room", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, name: name.trim(), code: joinCode.trim().toUpperCase() })
+        body: JSON.stringify({ action, name: name.trim(), code })
       });
       const session = { ...data, name: name.trim() };
       localStorage.setItem(ROOM_KEY, JSON.stringify(session));
       setJoinCode(data.code);
-      await sync(data.code, data.token);
+      const nextRoom: Room = { code: data.code, token: data.token, status: data.status, startedAt: data.startedAt, players: data.players };
+      setRoom(nextRoom); setPlayers(data.players); setPlayerId(data.playerId); setGuesses([]);
+      setStage(data.status === "playing" ? "game" : "lobby");
     } catch (error) { setNotice(errorText(error)); }
-    finally { setBusy(false); }
+    finally { busyRef.current = false; setBusy(false); }
+  }
+
+  async function startRound() {
+    if (!room || busyRef.current) return;
+    busyRef.current = true; setBusy(true); setNotice("");
+    try {
+      const data = await api<{ status: Room["status"]; startedAt: number; players: Player[] }>("/api/room", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", code: room.code, token: room.token, name })
+      });
+      const nextRoom: Room = { ...room, status: data.status, startedAt: data.startedAt, players: data.players };
+      setRoom(nextRoom); setPlayers(data.players); setStage("game");
+    } catch (error) { setNotice(errorText(error)); }
+    finally { busyRef.current = false; setBusy(false); }
   }
 
   async function submitGuess(event: FormEvent) {
@@ -135,9 +166,11 @@ export default function Home() {
         <div className="or">OR JOIN A FRIEND</div><form onSubmit={(event) => void startRoom(event, "join")}><label htmlFor="room">ROOM CODE</label><div className="join-row"><input id="room" className="field code" maxLength={6} placeholder="ABC123" value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())}/><button className="join" disabled={!ready || joinCode.trim().length !== 6 || busy}>Join</button></div></form>
         {notice && <p className="notice">{notice}</p>}<p className="privacy">◉ Your guesses stay private until reveal.</p></div>
     </div>}
-    {stage === "lobby" && room && <div className="panel"><p className="kicker">ROOM READY</p><h1>Bring the<br/><em>whole crew.</em></h1><p className="lede">Share this code. The round begins when all three seats are filled.</p><button className="room-code" onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}　⧉</button>
+    {stage === "lobby" && room && <div className="panel"><p className="kicker">ROOM READY</p><h1>Bring the<br/><em>whole crew.</em></h1><p className="lede">Share this code. The host starts the round when all three seats are ready.</p><button className="room-code" onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}　⧉</button>
       <div className="roster">{[0,1,2].map((index) => { const player = players[index]; return <div className="player" key={index}><span>0{index + 1}</span><b>{player?.name ?? "Waiting for player…"}</b><small>{player ? "IN ROOM" : "OPEN SEAT"}</small></div>; })}</div>
-      <p className="waiting">◉　Waiting for {3 - players.length} more {3 - players.length === 1 ? "player" : "players"}…</p><button className="quiet" onClick={leaveRoom}>Leave room</button>{notice && <p className="notice">{notice}</p>}</div>}
+      {players.length < 3 ? <p className="waiting">◉　Waiting for {3 - players.length} more {3 - players.length === 1 ? "player" : "players"}…</p> : <p className="waiting">◉　All three seats are ready.</p>}
+      {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length !== 3 || busy} onClick={() => void startRound()}>{players.length === 3 ? "Start round ↗" : `Waiting for players · ${players.length}/3`}</button>}
+      <button className="quiet" onClick={leaveRoom}>Leave room</button>{notice && <p className="notice">{notice}</p>}</div>}
     {stage === "game" && room && <div className="game"><section><div className="game-head"><div><p className="kicker">COUNTRY SPRINT　<span className="live">● LIVE</span></p><h1>Name every<br/><em>country.</em></h1></div><div className={left < 60 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div><p className="lede">Type a country and press enter. Only your list is visible.</p>
       <form className="guess-form" onSubmit={submitGuess}><input ref={input} className="field" placeholder="Type a country name…" value={entry} onChange={(event) => setEntry(event.target.value)} disabled={left <= 0 || busy}/><button className="primary" disabled={!entry.trim() || left <= 0 || busy}>Add ↵</button></form>
       {notice && <p className="notice">{notice}</p>}<div className="guess-title">YOUR ANSWERS　<b>{guesses.length}</b><span>HIDDEN FROM OTHERS</span></div>
