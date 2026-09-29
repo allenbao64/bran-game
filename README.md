@@ -1,6 +1,6 @@
 # Bran Game — Atlas Sprint
 
-A three-player country sprint hosted on Vercel. The room starts when player three joins; each player’s guesses stay private until the shared 10-minute timer ends.
+A three-player country sprint hosted on Vercel. The host starts once all three players are in the room; each player’s guesses stay private until the shared 10-minute timer ends.
 
 ## Online setup
 
@@ -25,7 +25,7 @@ The environment variable names are listed in .env.example. Do not commit real cr
 ## Rules
 
 - Exactly three players per room.
-- The round starts as the third player joins.
+- The host can start once all three players have joined.
 - Each player can score each country once.
 - At 10 minutes, all three lists and the leaderboard unlock.
 
