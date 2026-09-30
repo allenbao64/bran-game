@@ -17,6 +17,11 @@ function error(message: string, status = 400) {
 function validName(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 18;
 }
+function parseScriptResult<T>(result: unknown): T {
+  if (typeof result === "string") return JSON.parse(result) as T;
+  if (result !== null && typeof result === "object") return result as T;
+  throw new Error("Unexpected response from Redis script.");
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -68,10 +73,33 @@ export async function POST(request: NextRequest) {
         return cjson.encode({ok=true, status=room.status, startedAt=room.startedAt, players=players})
       `;
       const result = await redis.eval(script, [key], [body.token, String(Date.now()), String(ROOM_TTL_SECONDS)]);
-      const started = JSON.parse(String(result)) as { error?: string; ok?: boolean; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> };
+      const started = parseScriptResult<{ error?: string; ok?: boolean; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> }>(result);
       if (started.error) return error(started.error);
       if (!started.ok) return error("Could not start this round. Please try again.");
       return NextResponse.json({ code, status: started.status, startedAt: started.startedAt, players: started.players });
+    }
+
+    if (body.action === "end") {
+      if (typeof body.token !== "string" || body.token.length < 32) return error("Room session is invalid.", 401);
+      const script = `
+        local raw = redis.call('GET', KEYS[1])
+        if not raw then return cjson.encode({error='Room not found. Check the code.'}) end
+        local room = cjson.decode(raw)
+        local host = nil
+        for _, player in ipairs(room.players) do
+          if player.token == ARGV[1] then host = player end
+        end
+        if not host or not host.host then return cjson.encode({error='Only the host can end this round.'}) end
+        if room.status ~= 'playing' then return cjson.encode({error='This round is not in progress.'}) end
+        room.status = 'ended'
+        redis.call('SET', KEYS[1], cjson.encode(room), 'EX', tonumber(ARGV[2]))
+        return cjson.encode({ok=true, status=room.status})
+      `;
+      const result = await redis.eval(script, [key], [body.token, String(ROOM_TTL_SECONDS)]);
+      const ended = parseScriptResult<{ error?: string; ok?: boolean; status?: Room["status"] }>(result);
+      if (ended.error) return error(ended.error);
+      if (!ended.ok) return error("Could not end this round. Please try again.");
+      return NextResponse.json({ code, status: ended.status });
     }
 
     if (body.action !== "join") return error("Choose create or join.");
@@ -92,7 +120,7 @@ export async function POST(request: NextRequest) {
       return cjson.encode({ok=true, status=room.status, startedAt=room.startedAt, players=players})
     `;
     const result = await redis.eval(script, [key], [playerId, token, name, String(ROOM_TTL_SECONDS)]);
-    const joined = JSON.parse(String(result)) as { error?: string; ok?: boolean; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> };
+    const joined = parseScriptResult<{ error?: string; ok?: boolean; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> }>(result);
     if (joined.error) return error(joined.error);
     if (!joined.ok) return error("Could not join that room. Please try again.");
     return NextResponse.json({ code, token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
