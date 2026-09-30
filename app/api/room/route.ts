@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         end
         if not host or not host.host then return cjson.encode({error='Only the host can start this round.'}) end
         if room.status ~= 'waiting' then return cjson.encode({error='This round has already started.'}) end
-        if #room.players ~= 3 then return cjson.encode({error='All three players must join before starting.'}) end
+        if #room.players < 2 then return cjson.encode({error='At least two players must join before starting.'}) end
         room.status = 'playing'
         room.startedAt = tonumber(ARGV[2])
         redis.call('SET', KEYS[1], cjson.encode(room), 'EX', tonumber(ARGV[3]))

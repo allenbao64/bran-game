@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveCountry, type CountryAnswer } from "@/lib/countries";
 
 type Player = { id: string; name: string; host: boolean };
@@ -155,21 +155,21 @@ export default function Home() {
   const sortedResults = useMemo(() => results, [results]);
 
   return <main className="shell">
-    <header className="topbar"><a className="brand" href="/"><span className="mark">A</span> ATLAS <b>SPRINT</b></a><div className="top-meta"><i/> FRIEND ROOM　/　3 PLAYERS</div></header>
+    <header className="topbar"><a className="brand" href="/"><span className="mark">A</span> ATLAS <b>SPRINT</b></a><div className="top-meta"><i/> FRIEND ROOM　/　2–3 PLAYERS</div></header>
     <section className="content"><div className="eyebrow">✳　BRAN GAME • FIRST PLAYTEST</div>
     {stage === "home" && <div className="home-grid">
-      <div className="hero"><p className="kicker">SAME WORLD. THREE MINDS.</p><h1>How many<br/><em>countries</em><br/>can you name?</h1><p className="lede">Ten minutes. Three players. Every answer stays secret until the clock runs out.</p>
-        <div className="rules"><p><b>01</b> Make a private room and send the code to two friends.</p><p><b>02</b> Type as many unique countries as you can before time.</p><p><b>03</b> All three lists unlock together. Highest score wins.</p></div></div>
+      <div className="hero"><p className="kicker">SAME WORLD. TWO OR THREE MINDS.</p><h1>How many<br/><em>countries</em><br/>can you name?</h1><p className="lede">Ten minutes. Two or three players. Every answer stays secret until the clock runs out.</p>
+        <div className="rules"><p><b>01</b> Make a private room and share the code with one or two friends.</p><p><b>02</b> Type as many unique countries as you can before time.</p><p><b>03</b> Everyone’s list unlocks together. Highest score wins.</p></div></div>
       <div className="card"><div className="card-title">YOUR SEAT <span>PLAYER 01–03</span></div>
         <label htmlFor="name">DISPLAY NAME</label><input id="name" className="field" maxLength={18} placeholder="What should we call you?" value={name} onChange={(event) => setName(event.target.value)}/>
         <button className="primary" disabled={!ready || busy} onClick={(event) => void startRoom(event as unknown as FormEvent, "create")}>Create a room <span>↗</span></button>
         <div className="or">OR JOIN A FRIEND</div><form onSubmit={(event) => void startRoom(event, "join")}><label htmlFor="room">ROOM CODE</label><div className="join-row"><input id="room" className="field code" maxLength={6} placeholder="ABC123" value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())}/><button className="join" disabled={!ready || joinCode.trim().length !== 6 || busy}>Join</button></div></form>
         {notice && <p className="notice">{notice}</p>}<p className="privacy">◉ Your guesses stay private until reveal.</p></div>
     </div>}
-    {stage === "lobby" && room && <div className="panel"><p className="kicker">ROOM READY</p><h1>Bring the<br/><em>whole crew.</em></h1><p className="lede">Share this code. The host starts the round when all three seats are ready.</p><button className="room-code" onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}　⧉</button>
+    {stage === "lobby" && room && <div className="panel"><p className="kicker">ROOM READY</p><h1>Bring the<br/><em>whole crew.</em></h1><p className="lede">Share this code. Start with two players, or wait for a third.</p><button className="room-code" onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}　⧉</button>
       <div className="roster">{[0,1,2].map((index) => { const player = players[index]; return <div className="player" key={index}><span>0{index + 1}</span><b>{player?.name ?? "Waiting for player…"}</b><small>{player ? "IN ROOM" : "OPEN SEAT"}</small></div>; })}</div>
-      {players.length < 3 ? <p className="waiting">◉　Waiting for {3 - players.length} more {3 - players.length === 1 ? "player" : "players"}…</p> : <p className="waiting">◉　All three seats are ready.</p>}
-      {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length !== 3 || busy} onClick={() => void startRound()}>{players.length === 3 ? "Start round ↗" : `Waiting for players · ${players.length}/3`}</button>}
+      {players.length === 1 ? <p className="waiting">◉　One more player is needed to start.</p> : players.length === 2 ? <p className="waiting">◉　Two players are ready. Start now or wait for a third.</p> : <p className="waiting">◉　All three seats are ready.</p>}
+      {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length < 2 || busy} onClick={() => void startRound()}>{players.length < 2 ? "Waiting for one more player" : "Start round ↗"}</button>}
       <button className="quiet" onClick={leaveRoom}>Leave room</button>{notice && <p className="notice">{notice}</p>}</div>}
     {stage === "game" && room && <div className="game"><section><div className="game-head"><div><p className="kicker">COUNTRY SPRINT　<span className="live">● LIVE</span></p><h1>Name every<br/><em>country.</em></h1></div><div className={left < 60 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div><p className="lede">Type a country and press enter. Only your list is visible.</p>
       <form className="guess-form" onSubmit={submitGuess}><input ref={input} className="field" placeholder="Type a country name…" value={entry} onChange={(event) => setEntry(event.target.value)} disabled={left <= 0 || busy}/><button className="primary" disabled={!entry.trim() || left <= 0 || busy}>Add ↵</button></form>
