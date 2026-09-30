@@ -9,6 +9,7 @@ type Room = { code: string; token: string; status: "waiting" | "playing" | "ende
 type Stage = "home" | "lobby" | "game" | "results";
 const ROOM_KEY = "bran-game-room";
 const ROUND_SECONDS = 600;
+const BUILD_VERSION = process.env.NEXT_PUBLIC_GAME_VERSION ?? "local";
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -155,7 +156,7 @@ export default function Home() {
   const sortedResults = useMemo(() => results, [results]);
 
   return <main className="shell">
-    <header className="topbar"><a className="brand" href="/"><span className="mark">A</span> ATLAS <b>SPRINT</b></a><div className="top-meta"><i/> FRIEND ROOM　/　2–3 PLAYERS</div></header>
+    <header className="topbar"><a className="brand" href="/"><span className="mark">A</span> ATLAS <b>SPRINT</b></a><div className="top-meta"><i/> FRIEND ROOM　/　2–3 PLAYERS <span className="build-version" title={`Deployed commit ${BUILD_VERSION}`}>BUILD {BUILD_VERSION.slice(0, 7)}</span></div></header>
     <section className="content"><div className="eyebrow">✳　BRAN GAME • FIRST PLAYTEST</div>
     {stage === "home" && <div className="home-grid">
       <div className="hero"><p className="kicker">SAME WORLD. TWO OR THREE MINDS.</p><h1>How many<br/><em>countries</em><br/>can you name?</h1><p className="lede">Ten minutes. Two or three players. Every answer stays secret until the clock runs out.</p>
@@ -176,7 +177,7 @@ export default function Home() {
       {notice && <p className="notice">{notice}</p>}<div className="guess-title">YOUR ANSWERS　<b>{guesses.length}</b><span>HIDDEN FROM OTHERS</span></div>
       <div className="guess-list">{guesses.length ? guesses.map((guess, index) => <div className="guess" key={guess.code}><small>{String(guesses.length - index).padStart(2,"0")}</small>{guess.name}<b>✓</b></div>) : <p className="empty">Your first answer is waiting here.<br/>The other players can’t see this list.</p>}</div></section>
       <aside><div className="aside-title">THE ROOM <b>{players.length}/3</b></div>{players.map((player) => <div className="mini" key={player.id}><span>{player.name.slice(0,1).toUpperCase()}</span><b>{player.name}{player.id === playerId ? " (you)" : ""}</b><i>◉</i></div>)}<p className="aside-note">✳ Answers stay under wraps until the timer hits zero. No peeking, no copying.</p></aside></div>}
-    {stage === "results" && room && <div className="panel results"><p className="kicker">TIME’S UP • ANSWERS REVEALED</p><h1>The world<br/>is <em>yours.</em></h1><p className="lede">Three players. One planet. Here’s how your lists compare.</p><div className="board">{sortedResults.map((result, index) => <article key={result.playerId}><small>{["1ST","2ND","3RD"][index]}</small><b>{result.name}{result.playerId === playerId ? " · YOU" : ""}</b><strong>{result.guesses.length}<small>COUNTRIES</small></strong><div className="chips">{result.guesses.map((guess) => <span key={guess.code}>{guess.name}</span>)}</div></article>)}</div><button className="primary" onClick={leaveRoom}>Back to start ↗</button></div>}
+    {stage === "results" && room && <div className="panel results"><p className="kicker">TIME’S UP • ANSWERS REVEALED</p><h1>The world<br/>is <em>yours.</em></h1><p className="lede">{players.length} players. One planet. Here’s how your lists compare.</p><div className="board">{sortedResults.map((result, index) => <article key={result.playerId}><small>{["1ST","2ND","3RD"][index]}</small><b>{result.name}{result.playerId === playerId ? " · YOU" : ""}</b><strong>{result.guesses.length}<small>COUNTRIES</small></strong><div className="chips">{result.guesses.map((guess) => <span key={guess.code}>{guess.name}</span>)}</div></article>)}</div><button className="primary" onClick={leaveRoom}>Back to start ↗</button></div>}
     <footer><span>BRAN GAME / 001</span><span>MADE FOR FRIENDS, PLAYED FAIR</span><span>© 2026</span></footer></section>
   </main>;
 }

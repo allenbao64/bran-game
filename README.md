@@ -29,6 +29,10 @@ Run the game flow checks and production build before shipping a change:
 
 The tests call the real room and guess route handlers with an in-memory Redis test double, and mount the real page in jsdom for join and start interactions. They cover two- and three-player rooms, room capacity, host-only start, duplicate clicks and guesses, private answers, authorization, and timer-based reveal. The Redis test double models the commands used by these routes; it does not contact the hosted Upstash database.
 
+## Build version
+
+The header shows the first seven characters of the Git commit SHA used for the Vercel deployment. Every new commit pushed to GitHub produces a different build version, so compare the badge with the latest commit on `main` to confirm the deploy is current. Local builds show `local`. Vercel supplies `VERCEL_GIT_COMMIT_SHA` as a system environment variable.
+
 The environment variable names are listed in .env.example. Do not commit real credentials.
 
 ## Rules
@@ -36,6 +40,6 @@ The environment variable names are listed in .env.example. Do not commit real cr
 - Two or three players per room.
 - The host can start once a second player has joined. A third player can join while the room is waiting.
 - Each player can score each country once.
-- At 10 minutes, all three lists and the leaderboard unlock.
+- At 10 minutes, all players’ lists and the leaderboard unlock.
 
 The answer list uses UN member states, plus the Holy See, Palestine, Taiwan, and Kosovo, with common English aliases.
