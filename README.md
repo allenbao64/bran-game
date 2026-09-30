@@ -39,6 +39,7 @@ The environment variable names are listed in .env.example. Do not commit real cr
 
 - Two or three players per room.
 - The host can start once a second player has joined. A third player can join while the room is waiting.
+- The host can end a round early to reveal the answers; otherwise it ends after ten minutes.
 - Each player can score each country once.
 - At 10 minutes, all players’ lists and the leaderboard unlock.
 

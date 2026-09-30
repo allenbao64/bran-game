@@ -79,12 +79,15 @@ test("joining opens the lobby from one response and ignores rapid repeated submi
 test("a host can start a two-player room from the lobby", async () => {
   const roomSession = { code: "ABC234", token: "a".repeat(64), playerId: "p1", name: "Host" };
   const calls: { url: string; body?: Record<string, unknown> }[] = [];
+  let ended = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ url, body });
-    const data = body?.action === "start"
-      ? { status: "playing", startedAt: Date.now(), players: [{ id: "p1", name: "Host", host: true }, { id: "p2", name: "Brian", host: false }] }
+    if (body?.action === "start") return new Response(JSON.stringify({ status: "playing", startedAt: Date.now(), players: [{ id: "p1", name: "Host", host: true }, { id: "p2", name: "Brian", host: false }] }), { status: 200, headers: { "content-type": "application/json" } });
+    if (body?.action === "end") { ended = true; return new Response(JSON.stringify({ status: "ended" }), { status: 200, headers: { "content-type": "application/json" } }); }
+    const data = ended
+      ? { code: "ABC234", status: "ended", startedAt: Date.now() - 1000, players: [{ id: "p1", name: "Host", host: true }, { id: "p2", name: "Brian", host: false }], playerId: "p1", myGuesses: [], results: [{ playerId: "p1", name: "Host", guesses: [] }, { playerId: "p2", name: "Brian", guesses: [] }] }
       : { code: "ABC234", status: "waiting", startedAt: null, players: [{ id: "p1", name: "Host", host: true }, { id: "p2", name: "Brian", host: false }], playerId: "p1", myGuesses: [] };
     return new Response(JSON.stringify(data), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
@@ -96,4 +99,11 @@ test("a host can start a two-player room from the lobby", async () => {
   await act(async () => { startButton!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.ok(calls.some((call) => call.body?.action === "start"));
   assert.match(doc.body.textContent ?? "", /COUNTRY SPRINT/);
+
+  doc.defaultView!.confirm = () => true;
+  const stopButton = [...doc.querySelectorAll("button")].find((button) => button.textContent?.includes("End round & reveal"));
+  assert.ok(stopButton, "the host should have a way to end a live round");
+  await act(async () => { stopButton!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.ok(calls.some((call) => call.body?.action === "end"));
+  assert.match(doc.body.textContent ?? "", /ANSWERS REVEALED/);
 });

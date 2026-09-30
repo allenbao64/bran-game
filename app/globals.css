@@ -12,4 +12,5 @@ footer{display:flex;justify-content:space-between;border-top:1px solid var(--lin
 @media(max-width:480px){.topbar{height:62px}.top-meta{font-size:8px}.eyebrow{margin-top:25px}.home-grid{min-height:initial;padding:34px 0 45px}.hero h1{font-size:58px}.card{padding:21px}.panel{margin:38px auto 60px;padding:24px 19px}.game-head{align-items:end}.game h1{font-size:51px}.timer b{font-size:22px}footer{font-size:7px}}
 .primary:disabled,.join:disabled{opacity:.45;cursor:not-allowed}.panel>.primary{width:100%;margin:0 0 14px;text-align:left}
 .build-version{display:inline-block;margin-left:12px;padding:6px 8px;border:1px solid #d9ddd0;border-radius:3px;color:var(--green);background:#eef2e4;font-size:9px;letter-spacing:.04em}
+.end-round{width:100%;margin-top:20px}
 @media(max-width:480px){.build-version{margin-left:5px;padding:4px 5px;font-size:7px}.top-meta{font-size:7px}}

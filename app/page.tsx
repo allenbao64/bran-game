@@ -127,6 +127,19 @@ export default function Home() {
     finally { busyRef.current = false; setBusy(false); }
   }
 
+  async function endRound() {
+    if (!room || busyRef.current || !window.confirm("End the round now and reveal everyone’s answers?")) return;
+    busyRef.current = true; setBusy(true); setNotice("");
+    try {
+      await api("/api/room", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "end", code: room.code, token: room.token, name })
+      });
+      await sync(room.code, room.token);
+    } catch (error) { setNotice(errorText(error)); }
+    finally { busyRef.current = false; setBusy(false); }
+  }
+
   async function submitGuess(event: FormEvent) {
     event.preventDefault();
     if (!room || !entry.trim()) return;
@@ -176,7 +189,7 @@ export default function Home() {
       <form className="guess-form" onSubmit={submitGuess}><input ref={input} className="field" placeholder="Type a country name…" value={entry} onChange={(event) => setEntry(event.target.value)} disabled={left <= 0 || busy}/><button className="primary" disabled={!entry.trim() || left <= 0 || busy}>Add ↵</button></form>
       {notice && <p className="notice">{notice}</p>}<div className="guess-title">YOUR ANSWERS　<b>{guesses.length}</b><span>HIDDEN FROM OTHERS</span></div>
       <div className="guess-list">{guesses.length ? guesses.map((guess, index) => <div className="guess" key={guess.code}><small>{String(guesses.length - index).padStart(2,"0")}</small>{guess.name}<b>✓</b></div>) : <p className="empty">Your first answer is waiting here.<br/>The other players can’t see this list.</p>}</div></section>
-      <aside><div className="aside-title">THE ROOM <b>{players.length}/3</b></div>{players.map((player) => <div className="mini" key={player.id}><span>{player.name.slice(0,1).toUpperCase()}</span><b>{player.name}{player.id === playerId ? " (you)" : ""}</b><i>◉</i></div>)}<p className="aside-note">✳ Answers stay under wraps until the timer hits zero. No peeking, no copying.</p></aside></div>}
+      <aside><div className="aside-title">THE ROOM <b>{players.length}/3</b></div>{players.map((player) => <div className="mini" key={player.id}><span>{player.name.slice(0,1).toUpperCase()}</span><b>{player.name}{player.id === playerId ? " (you)" : ""}</b><i>◉</i></div>)}<p className="aside-note">✳ Answers stay under wraps until the timer hits zero. No peeking, no copying.</p>{players.find((player) => player.id === playerId)?.host && <button className="quiet end-round" disabled={busy} onClick={() => void endRound()}>End round &amp; reveal</button>}{notice && <p className="notice">{notice}</p>}</aside></div>}
     {stage === "results" && room && <div className="panel results"><p className="kicker">TIME’S UP • ANSWERS REVEALED</p><h1>The world<br/>is <em>yours.</em></h1><p className="lede">{players.length} players. One planet. Here’s how your lists compare.</p><div className="board">{sortedResults.map((result, index) => <article key={result.playerId}><small>{["1ST","2ND","3RD"][index]}</small><b>{result.name}{result.playerId === playerId ? " · YOU" : ""}</b><strong>{result.guesses.length}<small>COUNTRIES</small></strong><div className="chips">{result.guesses.map((guess) => <span key={guess.code}>{guess.name}</span>)}</div></article>)}</div><button className="primary" onClick={leaveRoom}>Back to start ↗</button></div>}
     <footer><span>BRAN GAME / 001</span><span>MADE FOR FRIENDS, PLAYED FAIR</span><span>© 2026</span></footer></section>
   </main>;

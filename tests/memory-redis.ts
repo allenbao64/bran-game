@@ -41,30 +41,40 @@ export class MemoryRedis {
     const key = keys[0];
     const room = await this.get<StoredRoom>(key);
     if (script.includes("Only the host can start this round.")) {
-      if (!room) return JSON.stringify({ error: "Room not found. Check the code." });
+      if (!room) return { error: "Room not found. Check the code." };
       const host = room.players.find((player) => player.token === args[0]);
-      if (!host?.host) return JSON.stringify({ error: "Only the host can start this round." });
-      if (room.status !== "waiting") return JSON.stringify({ error: "This round has already started." });
-      if (room.players.length < 2) return JSON.stringify({ error: "At least two players must join before starting." });
+      if (!host?.host) return { error: "Only the host can start this round." };
+      if (room.status !== "waiting") return { error: "This round has already started." };
+      if (room.players.length < 2) return { error: "At least two players must join before starting." };
       room.status = "playing";
       room.startedAt = Number(args[1]);
       await this.set(key, room);
-      return JSON.stringify({
+      return {
         ok: true, status: room.status, startedAt: room.startedAt,
         players: room.players.map(({ id, name, host: isHost }) => ({ id, name, host: isHost }))
-      });
+      };
+    }
+
+    if (script.includes("Only the host can end this round.")) {
+      if (!room) return { error: "Room not found. Check the code." };
+      const host = room.players.find((player) => player.token === args[0]);
+      if (!host?.host) return { error: "Only the host can end this round." };
+      if (room.status !== "playing") return { error: "This round is not in progress." };
+      room.status = "ended";
+      await this.set(key, room);
+      return { ok: true, status: room.status };
     }
 
     if (script.includes("name=ARGV[3], host=false")) {
-      if (!room) return JSON.stringify({ error: "Room not found. Check the code." });
-      if (room.status !== "waiting") return JSON.stringify({ error: "That round has already started." });
-      if (room.players.length >= 3) return JSON.stringify({ error: "This room is full." });
+      if (!room) return { error: "Room not found. Check the code." };
+      if (room.status !== "waiting") return { error: "That round has already started." };
+      if (room.players.length >= 3) return { error: "This room is full." };
       room.players.push({ id: args[0], token: args[1], name: args[2], host: false });
       await this.set(key, room);
-      return JSON.stringify({
+      return {
         ok: true, status: room.status, startedAt: room.startedAt,
         players: room.players.map(({ id, name, host }) => ({ id, name, host }))
-      });
+      };
     }
     throw new Error(`Unexpected Redis Lua script: ${script.slice(0, 80)}`);
   }

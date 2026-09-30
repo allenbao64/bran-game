@@ -110,6 +110,25 @@ test("only the host can start and one player cannot start alone", async () => {
   assert.match(lateJoin.error, /already started/);
 });
 
+test("the host can end a live round early and reveal every player's answers", async () => {
+  const host = await create();
+  const guest = await json(await join(host.code, "Brian")) as unknown as Session;
+  assert.equal((await start(host)).status, 200);
+  assert.equal((await guess(host, "CA")).status, 200);
+  assert.equal((await guess(guest, "US")).status, 200);
+
+  const guestStop = await postRoom({ action: "end", code: host.code, token: guest.token, name: "Brian" });
+  assert.equal(guestStop.status, 400);
+  assert.match((await json(guestStop)).error, /Only the host/);
+
+  const hostStop = await postRoom({ action: "end", code: host.code, token: host.token, name: "Host" });
+  assert.equal(hostStop.status, 200);
+  assert.equal((await json(await room(guest))).status, "ended");
+  const revealed = await json(await room(guest));
+  assert.deepEqual(revealed.results.map((result: { guesses: { code: string }[] }) => result.guesses[0].code), ["CA", "US"]);
+  assert.equal((await guess(guest, "GB")).status, 409);
+});
+
 test("room sessions cannot read or submit guesses for someone else's seat", async () => {
   const host = await create();
   await join(host.code, "Brian");
