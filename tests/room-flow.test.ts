@@ -5,9 +5,10 @@ import type { Redis } from "@upstash/redis";
 import { POST as roomPost, GET as roomGet } from "@/app/api/room/route";
 import { POST as guessPost } from "@/app/api/guess/route";
 import { setRedisForTests } from "@/lib/redis";
+import { resolveChampion } from "@/lib/champions";
 import { MemoryRedis } from "./memory-redis";
 
-type Session = { code: string; token: string; playerId: string; status: string; startedAt: number | null; players: { id: string; name: string; host: boolean }[] };
+type Session = { code: string; token: string; playerId: string; gameId?: "countries" | "champions"; status: string; startedAt: number | null; players: { id: string; name: string; host: boolean }[] };
 const json = async (response: Response) => response.json() as Promise<Record<string, any>>;
 let store: MemoryRedis;
 
@@ -22,8 +23,8 @@ async function postRoom(body: Record<string, unknown>) {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
   }));
 }
-async function create(name = "Host") {
-  const response = await postRoom({ action: "create", name });
+async function create(name = "Host", gameId?: "countries" | "champions") {
+  const response = await postRoom({ action: "create", name, ...(gameId ? { gameId } : {}) });
   assert.equal(response.status, 200);
   return json(response) as Promise<Session>;
 }
@@ -79,6 +80,35 @@ test("two players can join, start, keep guesses private, and reveal together at 
   } finally {
     Date.now = realNow;
   }
+});
+
+test("champion rooms share the selected game and end after two minutes", async () => {
+  const host = await create("Host", "champions");
+  assert.equal(host.gameId, "champions");
+  const guest = await json(await join(host.code, "Brian")) as unknown as Session;
+  assert.equal(guest.gameId, "champions", "the guest should inherit the game's selection from the room");
+  const started = await json(await start(host));
+  assert.equal(started.gameId, "champions");
+  assert.equal(resolveChampion("Locke")?.name, "Locke", "the roster includes current 2026 champions");
+
+  assert.equal((await guessPost(new NextRequest("http://localhost/api/guess", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: host.code, token: host.token, answerCode: resolveChampion("Kha Zix")!.code })
+  }))).status, 200);
+  const wrongGameAnswer = await guessPost(new NextRequest("http://localhost/api/guess", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: host.code, token: host.token, answerCode: "CA" })
+  }));
+  assert.equal(wrongGameAnswer.status, 400, "countries should not score in a champion round");
+
+  const realNow = Date.now;
+  Date.now = () => started.startedAt + 2 * 60 * 1000;
+  try {
+    const revealed = await json(await room(guest));
+    assert.equal(revealed.gameId, "champions");
+    assert.equal(revealed.status, "ended");
+    assert.deepEqual(revealed.results[0].guesses, [{ code: "kha-zix", name: "Kha'Zix" }]);
+  } finally { Date.now = realNow; }
 });
 
 test("three players can fill all seats and the fourth join is rejected", async () => {

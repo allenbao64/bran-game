@@ -1,5 +1,6 @@
 type StoredRoom = {
   code: string;
+  gameId?: "countries" | "champions";
   status: "waiting" | "playing" | "ended";
   createdAt: number;
   startedAt: number | null;
@@ -50,7 +51,7 @@ export class MemoryRedis {
       room.startedAt = Number(args[1]);
       await this.set(key, room);
       return {
-        ok: true, status: room.status, startedAt: room.startedAt,
+        ok: true, gameId: room.gameId ?? "countries", status: room.status, startedAt: room.startedAt,
         players: room.players.map(({ id, name, host: isHost }) => ({ id, name, host: isHost }))
       };
     }
@@ -72,7 +73,7 @@ export class MemoryRedis {
       room.players.push({ id: args[0], token: args[1], name: args[2], host: false });
       await this.set(key, room);
       return {
-        ok: true, status: room.status, startedAt: room.startedAt,
+        ok: true, gameId: room.gameId ?? "countries", status: room.status, startedAt: room.startedAt,
         players: room.players.map(({ id, name, host }) => ({ id, name, host }))
       };
     }

@@ -1,6 +1,6 @@
 # Bran Game — Atlas Sprint
 
-A two- or three-player country sprint hosted on Vercel. The host can start when at least two players have joined; each player’s guesses stay private until the shared 10-minute timer ends.
+A two- or three-player naming-game lobby hosted on Vercel. Players can choose a 10-minute country sprint or a two-minute League of Legends champion sprint. The host can start when at least two players have joined; each player’s answers stay private until the shared timer ends.
 
 ## Online setup
 
@@ -27,7 +27,7 @@ Run the game flow checks and production build before shipping a change:
     npm test
     npm run build
 
-The tests call the real room and guess route handlers with an in-memory Redis test double, and mount the real page in jsdom for join and start interactions. They cover two- and three-player rooms, room capacity, host-only start, duplicate clicks and guesses, private answers, authorization, and timer-based reveal. The Redis test double models the commands used by these routes; it does not contact the hosted Upstash database.
+The tests call the real room and guess route handlers with an in-memory Redis test double, and mount the real page in jsdom for lobby and multiplayer interactions. They cover both player counts, room capacity, host-only start and early end, duplicate clicks and guesses, private answers, game selection, game-specific answer validation, authorization, and timer-based reveal. The Redis test double models the commands used by these routes; it does not contact the hosted Upstash database.
 
 ## Build version
 
@@ -40,7 +40,8 @@ The environment variable names are listed in .env.example. Do not commit real cr
 - Two or three players per room.
 - The host can start once a second player has joined. A third player can join while the room is waiting.
 - The host can end a round early to reveal the answers; otherwise it ends after ten minutes.
-- Each player can score each country once.
-- At 10 minutes, all players’ lists and the leaderboard unlock.
+- Country Sprint lasts 10 minutes; Champion Sprint lasts 2 minutes.
+- Each player can score each valid answer once.
+- At the selected game's time limit, all players’ lists and the leaderboard unlock.
 
-The answer list uses UN member states, plus the Holy See, Palestine, Taiwan, and Kosovo, with common English aliases.
+Country Sprint uses UN member states, plus the Holy See, Palestine, Taiwan, and Kosovo, with common English aliases. Champion Sprint uses the English League of Legends roster from Riot Data Dragon version 16.18.1, including common punctuation and spacing variants.

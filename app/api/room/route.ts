@@ -1,12 +1,12 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
+import { gameConfig, isGameId, type GameId } from "@/lib/games";
 
 export const runtime = "nodejs";
-const ROUND_MS = 10 * 60 * 1000;
 
 type Player = { id: string; token: string; name: string; host: boolean };
-type Room = { code: string; status: "waiting" | "playing" | "ended"; createdAt: number; startedAt: number | null; players: Player[] };
+type Room = { code: string; gameId?: GameId; status: "waiting" | "playing" | "ended"; createdAt: number; startedAt: number | null; players: Player[] };
 const roomKey = (code: string) => `bran:room:${code}`;
 const cleanPlayer = (p: Player) => ({ id: p.id, name: p.name, host: p.host });
 const publicPlayers = (players: Player[]) => players.map(cleanPlayer);
@@ -30,15 +30,17 @@ export async function POST(request: NextRequest) {
     if (!validName(body.name)) return error("Name must be 1–18 characters.");
     const name = body.name.trim();
     if (body.action === "create") {
+      if (body.gameId !== undefined && !isGameId(body.gameId)) return error("Choose a game to create a room.");
+      const gameId: GameId = isGameId(body.gameId) ? body.gameId : "countries";
       const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       for (let attempt = 0; attempt < 8; attempt++) {
         const code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
         const token = randomUUID() + randomUUID();
         const player: Player = { id: randomUUID(), token, name, host: true };
-        const room: Room = { code, status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
+        const room: Room = { code, gameId, status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
         const created = await redis.set(roomKey(code), room, { ex: ROOM_TTL_SECONDS, nx: true });
         if (created) return NextResponse.json({
-          code, token, playerId: player.id, status: room.status,
+          code, gameId, token, playerId: player.id, status: room.status,
           startedAt: room.startedAt, players: publicPlayers(room.players)
         });
       }
@@ -70,13 +72,13 @@ export async function POST(request: NextRequest) {
         for _, player in ipairs(room.players) do
           table.insert(players, {id=player.id, name=player.name, host=player.host})
         end
-        return cjson.encode({ok=true, status=room.status, startedAt=room.startedAt, players=players})
+        return cjson.encode({ok=true, gameId=room.gameId or 'countries', status=room.status, startedAt=room.startedAt, players=players})
       `;
       const result = await redis.eval(script, [key], [body.token, String(Date.now()), String(ROOM_TTL_SECONDS)]);
-      const started = parseScriptResult<{ error?: string; ok?: boolean; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> }>(result);
+      const started = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> }>(result);
       if (started.error) return error(started.error);
       if (!started.ok) return error("Could not start this round. Please try again.");
-      return NextResponse.json({ code, status: started.status, startedAt: started.startedAt, players: started.players });
+      return NextResponse.json({ code, gameId: started.gameId ?? "countries", status: started.status, startedAt: started.startedAt, players: started.players });
     }
 
     if (body.action === "end") {
@@ -117,13 +119,13 @@ export async function POST(request: NextRequest) {
       for _, player in ipairs(room.players) do
         table.insert(players, {id=player.id, name=player.name, host=player.host})
       end
-      return cjson.encode({ok=true, status=room.status, startedAt=room.startedAt, players=players})
+      return cjson.encode({ok=true, gameId=room.gameId or 'countries', status=room.status, startedAt=room.startedAt, players=players})
     `;
     const result = await redis.eval(script, [key], [playerId, token, name, String(ROOM_TTL_SECONDS)]);
-    const joined = parseScriptResult<{ error?: string; ok?: boolean; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> }>(result);
+    const joined = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> }>(result);
     if (joined.error) return error(joined.error);
     if (!joined.ok) return error("Could not join that room. Please try again.");
-    return NextResponse.json({ code, token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
+    return NextResponse.json({ code, gameId: joined.gameId ?? "countries", token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
   } catch (cause) {
     console.error("Room POST failed:", cause);
     return error("The room service is unavailable. Try again in a moment.", 503);
@@ -141,14 +143,15 @@ export async function GET(request: NextRequest) {
     const me = room.players.find((player) => player.token === token);
     if (!me) return error("This browser is not in that room.", 403);
 
-    const timedOut = room.status === "playing" && room.startedAt !== null && Date.now() >= room.startedAt + ROUND_MS;
+    const roundMs = gameConfig(room.gameId).durationSeconds * 1000;
+    const timedOut = room.status === "playing" && room.startedAt !== null && Date.now() >= room.startedAt + roundMs;
     if (timedOut) {
       room.status = "ended";
       await redis.set(roomKey(code), room, { ex: ROOM_TTL_SECONDS });
     }
     const ownGuesses = await redis.hgetall<Record<string, string>>(`bran:guesses:${code}:${me.id}`) ?? {};
     const response: Record<string, unknown> = {
-      code: room.code, status: room.status, startedAt: room.startedAt,
+      code: room.code, gameId: gameConfig(room.gameId).id, status: room.status, startedAt: room.startedAt,
       players: publicPlayers(room.players), playerId: me.id,
       myGuesses: Object.entries(ownGuesses).map(([countryCode, countryName]) => ({ code: countryCode, name: countryName }))
     };

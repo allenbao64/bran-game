@@ -34,7 +34,10 @@ function setInput(doc: Document, id: string, value: string) {
   const input = doc.getElementById(id) as HTMLInputElement;
   const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!;
   setter.call(input, value);
-  act(() => input.dispatchEvent(new dom.window.Event("input", { bubbles: true })));
+  act(() => {
+    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
 }
 
 function submitJoin(doc: Document) {
@@ -74,6 +77,16 @@ test("joining opens the lobby from one response and ignores rapid repeated submi
   assert.match(doc.body.textContent ?? "", /ROOM READY/);
   assert.match(doc.body.textContent ?? "", /Brian/);
   assert.equal(requests, 1, "the successful join response already contains lobby state; no fragile follow-up GET is needed");
+});
+
+test("the game lobby switches the selected game and create-room label", async () => {
+  const doc = mount();
+  const championOption = [...doc.querySelectorAll<HTMLButtonElement>(".game-option")].find((button) => button.textContent?.includes("Champion Sprint"));
+  assert.ok(championOption);
+  act(() => championOption!.click());
+  assert.equal(championOption!.getAttribute("aria-pressed"), "true");
+  const createButton = [...doc.querySelectorAll("button")].find((button) => button.textContent?.includes("Create Champion Sprint room"));
+  assert.ok(createButton);
 });
 
 test("a host can start a two-player room from the lobby", async () => {
