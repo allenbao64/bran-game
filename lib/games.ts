@@ -19,6 +19,16 @@ export const GAME_CATALOG = {
     inputPlaceholder: "Type a champion name…",
     rules: "Name as many League of Legends champions as you can in two minutes.",
   },
+  overwatch: {
+    id: "overwatch",
+    title: "Overwatch Hero Sprint",
+    prompt: "Name as many Overwatch heroes as you can.",
+    durationSeconds: 2 * 60,
+    durationLabel: "2 MIN",
+    answerLabel: "HEROES",
+    inputPlaceholder: "Type a hero name…",
+    rules: "Name as many Overwatch heroes as you can in two minutes.",
+  },
 } as const;
 
 export type GameId = keyof typeof GAME_CATALOG;

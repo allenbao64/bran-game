@@ -3,6 +3,7 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { resolveCountry } from "@/lib/countries";
 import { resolveChampion } from "@/lib/champions";
+import { resolveOverwatchHero } from "@/lib/overwatch-heroes";
 import { GAME_CATALOG, gameConfig, type GameId } from "@/lib/games";
 
 type Player = { id: string; name: string; host: boolean };
@@ -148,10 +149,12 @@ export default function Home() {
   async function submitGuess(event: FormEvent) {
     event.preventDefault();
     if (!room || !entry.trim()) return;
-    const answer = room.gameId === "champions" ? resolveChampion(entry) : resolveCountry(entry);
-    if (!answer) { setNotice(room.gameId === "champions" ? "That doesn’t match a League champion." : "That doesn’t match a country on the list."); return; }
+    const answer = room.gameId === "champions" ? resolveChampion(entry)
+      : room.gameId === "overwatch" ? resolveOverwatchHero(entry) : resolveCountry(entry);
+    const answerType = room.gameId === "champions" ? "champion" : room.gameId === "overwatch" ? "hero" : "country";
+    if (!answer) { setNotice(room.gameId === "champions" ? "That doesn’t match a League champion." : room.gameId === "overwatch" ? "That doesn’t match an Overwatch hero." : "That doesn’t match a country on the list."); return; }
     if (guesses.some((guess) => guess.code === answer.code)) {
-      setNotice(`You already named that ${room.gameId === "champions" ? "champion" : "country"}.`); setEntry(""); return;
+      setNotice(`You already named that ${answerType}.`); setEntry(""); return;
     }
     setBusy(true); setNotice("");
     try {
@@ -173,6 +176,7 @@ export default function Home() {
   const ready = Boolean(name.trim());
   const sortedResults = useMemo(() => results, [results]);
   const isChampions = activeGame.id === "champions";
+  const isOverwatch = activeGame.id === "overwatch";
 
   return <main className="shell">
     <header className="topbar"><a className="brand" href="/"><span className="mark">A</span> ATLAS <b>SPRINT</b></a><div className="top-meta"><i/> {stage === "home" ? "GAME LOBBY　/　2–3 PLAYERS" : `${activeGame.title.toUpperCase()}　/　2–3 PLAYERS`} <span className="build-version" title={`Deployed commit ${BUILD_VERSION}`}>BUILD {BUILD_VERSION.slice(0, 7)}</span></div></header>
@@ -196,7 +200,7 @@ export default function Home() {
       {players.length === 1 ? <p className="waiting">◉　One more player is needed to start.</p> : players.length === 2 ? <p className="waiting">◉　Two players are ready. Start now or wait for a third.</p> : <p className="waiting">◉　All three seats are ready.</p>}
       {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length < 2 || busy} onClick={() => void startRound()}>{players.length < 2 ? "Waiting for one more player" : "Start round ↗"}</button>}
       <button className="quiet" onClick={leaveRoom}>Leave room</button>{notice && <p className="notice">{notice}</p>}</div>}
-    {stage === "game" && room && <div className="game"><section><div className="game-head"><div><p className="kicker">{activeGame.title.toUpperCase()}　<span className="live">● LIVE</span></p><h1>{isChampions ? <>Name every<br/><em>champion.</em></> : <>Name every<br/><em>country.</em></>}</h1></div><div className={left < 30 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div><p className="lede">Type an answer and press enter. Only your list is visible.</p>
+    {stage === "game" && room && <div className="game"><section><div className="game-head"><div><p className="kicker">{activeGame.title.toUpperCase()}　<span className="live">● LIVE</span></p><h1>{isChampions ? <>Name every<br/><em>champion.</em></> : isOverwatch ? <>Name every<br/><em>hero.</em></> : <>Name every<br/><em>country.</em></>}</h1></div><div className={left < 30 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div><p className="lede">Type an answer and press enter. Only your list is visible.</p>
       <form className="guess-form" onSubmit={submitGuess}><input ref={input} className="field" placeholder={activeGame.inputPlaceholder} value={entry} onChange={(event) => setEntry(event.target.value)} disabled={left <= 0 || busy}/><button className="primary" disabled={!entry.trim() || left <= 0 || busy}>Add ↵</button></form>
       {notice && <p className="notice">{notice}</p>}<div className="guess-title">YOUR ANSWERS　<b>{guesses.length}</b><span>HIDDEN FROM OTHERS</span></div>
       <div className="guess-list">{guesses.length ? guesses.map((guess, index) => <div className="guess" key={guess.code}><small>{String(guesses.length - index).padStart(2,"0")}</small>{guess.name}<b>✓</b></div>) : <p className="empty">Your first answer is waiting here.<br/>The other players can’t see this list.</p>}</div></section>

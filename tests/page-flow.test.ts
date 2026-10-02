@@ -89,6 +89,15 @@ test("the game lobby switches the selected game and create-room label", async ()
   assert.ok(createButton);
 });
 
+test("the game lobby offers Overwatch Hero Sprint", async () => {
+  const doc = mount();
+  const heroOption = [...doc.querySelectorAll<HTMLButtonElement>(".game-option")].find((button) => button.textContent?.includes("Overwatch Hero Sprint"));
+  assert.ok(heroOption);
+  act(() => heroOption!.click());
+  assert.equal(heroOption!.getAttribute("aria-pressed"), "true");
+  assert.ok([...doc.querySelectorAll("button")].some((button) => button.textContent?.includes("Create Overwatch Hero Sprint room")));
+});
+
 test("a host can start a two-player room from the lobby", async () => {
   const roomSession = { code: "ABC234", token: "a".repeat(64), playerId: "p1", name: "Host" };
   const calls: { url: string; body?: Record<string, unknown> }[] = [];

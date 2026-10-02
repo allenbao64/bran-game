@@ -6,9 +6,10 @@ import { POST as roomPost, GET as roomGet } from "@/app/api/room/route";
 import { POST as guessPost } from "@/app/api/guess/route";
 import { setRedisForTests } from "@/lib/redis";
 import { resolveChampion } from "@/lib/champions";
+import { resolveOverwatchHero } from "@/lib/overwatch-heroes";
 import { MemoryRedis } from "./memory-redis";
 
-type Session = { code: string; token: string; playerId: string; gameId?: "countries" | "champions"; status: string; startedAt: number | null; players: { id: string; name: string; host: boolean }[] };
+type Session = { code: string; token: string; playerId: string; gameId?: "countries" | "champions" | "overwatch"; status: string; startedAt: number | null; players: { id: string; name: string; host: boolean }[] };
 const json = async (response: Response) => response.json() as Promise<Record<string, any>>;
 let store: MemoryRedis;
 
@@ -23,7 +24,7 @@ async function postRoom(body: Record<string, unknown>) {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
   }));
 }
-async function create(name = "Host", gameId?: "countries" | "champions") {
+async function create(name = "Host", gameId?: "countries" | "champions" | "overwatch") {
   const response = await postRoom({ action: "create", name, ...(gameId ? { gameId } : {}) });
   assert.equal(response.status, 200);
   return json(response) as Promise<Session>;
@@ -108,6 +109,39 @@ test("champion rooms share the selected game and end after two minutes", async (
     assert.equal(revealed.gameId, "champions");
     assert.equal(revealed.status, "ended");
     assert.deepEqual(revealed.results[0].guesses, [{ code: "kha-zix", name: "Kha'Zix" }]);
+  } finally { Date.now = realNow; }
+});
+
+test("Overwatch rooms accept hero names, share them privately, and end after two minutes", async () => {
+  const host = await create("Host", "overwatch");
+  const guest = await json(await join(host.code, "Brian")) as unknown as Session;
+  assert.equal(host.gameId, "overwatch");
+  assert.equal(guest.gameId, "overwatch");
+  const started = await json(await start(host));
+  assert.equal(started.gameId, "overwatch");
+
+  const lucio = resolveOverwatchHero("Lucio")!;
+  assert.equal(lucio.name, "Lúcio", "accent-insensitive entries resolve to the canonical hero name");
+  const scored = await guessPost(new NextRequest("http://localhost/api/guess", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: host.code, token: host.token, answerCode: lucio.code })
+  }));
+  assert.equal(scored.status, 200);
+
+  const crossGameAnswer = await guessPost(new NextRequest("http://localhost/api/guess", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: host.code, token: host.token, answerCode: "ahri" })
+  }));
+  assert.equal(crossGameAnswer.status, 400, "League champions should not score in Overwatch rounds");
+
+  const beforeReveal = await json(await room(guest));
+  assert.equal("results" in beforeReveal, false);
+  const realNow = Date.now;
+  Date.now = () => started.startedAt + 2 * 60 * 1000;
+  try {
+    const revealed = await json(await room(guest));
+    assert.equal(revealed.status, "ended");
+    assert.deepEqual(revealed.results[0].guesses, [{ code: "lucio", name: "Lúcio" }]);
   } finally { Date.now = realNow; }
 });
 

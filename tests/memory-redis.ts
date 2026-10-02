@@ -1,6 +1,6 @@
 type StoredRoom = {
   code: string;
-  gameId?: "countries" | "champions";
+  gameId?: "countries" | "champions" | "overwatch";
   status: "waiting" | "playing" | "ended";
   createdAt: number;
   startedAt: number | null;

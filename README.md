@@ -1,6 +1,6 @@
 # Bran Game — Atlas Sprint
 
-A two- or three-player naming-game lobby hosted on Vercel. Players can choose a 10-minute country sprint or a two-minute League of Legends champion sprint. The host can start when at least two players have joined; each player’s answers stay private until the shared timer ends.
+A two- or three-player naming-game lobby hosted on Vercel. Players can choose a 10-minute country sprint, a two-minute League of Legends champion sprint, or a two-minute Overwatch hero sprint. The host can start when at least two players have joined; each player’s answers stay private until the shared timer ends.
 
 ## Online setup
 
@@ -39,9 +39,9 @@ The environment variable names are listed in .env.example. Do not commit real cr
 
 - Two or three players per room.
 - The host can start once a second player has joined. A third player can join while the room is waiting.
-- The host can end a round early to reveal the answers; otherwise it ends after ten minutes.
-- Country Sprint lasts 10 minutes; Champion Sprint lasts 2 minutes.
+- The host can end a round early to reveal the answers; otherwise it ends when that game's timer runs out.
+- Country Sprint lasts 10 minutes; Champion Sprint and Overwatch Hero Sprint last 2 minutes.
 - Each player can score each valid answer once.
 - At the selected game's time limit, all players’ lists and the leaderboard unlock.
 
-Country Sprint uses UN member states, plus the Holy See, Palestine, Taiwan, and Kosovo, with common English aliases. Champion Sprint uses the English League of Legends roster from Riot Data Dragon version 16.18.1, including common punctuation and spacing variants.
+Country Sprint uses UN member states, plus the Holy See, Palestine, Taiwan, and Kosovo, with common English aliases. Champion Sprint uses the English League of Legends roster from Riot Data Dragon version 16.18.1. Overwatch Hero Sprint uses Blizzard's English live hero roster as of October 2, 2026. Both game rosters accept common punctuation, accent, and spacing variants.
