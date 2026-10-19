@@ -86,3 +86,29 @@ export function countryCodeFromNumericId(id: string | number | undefined) {
   return id === undefined ? undefined : byNumericCode.get(String(id).padStart(3, "0"));
 }
 
+
+/** Geography facts for every country in the game list (used by turn-based card rules). */
+export type CountryFacts = {
+  code: string; name: string; region: string; subregion: string; landlocked: boolean;
+  /** Land neighbours as alpha-2 codes, restricted to countries in the game list. */
+  borders: string[]; initial: string; letters: number;
+};
+const factsByCode = new Map<string, CountryFacts>();
+{
+  const alpha2By3 = new Map(rows.map((c) => [c.cca3, c.cca2]));
+  const lettersOf = (name: string) => normalizeCountryName(name).replace(/[^a-z]/g, "");
+  for (const c of rows) {
+    const letters = lettersOf(c.name.common);
+    factsByCode.set(c.cca2, {
+      code: c.cca2, name: c.name.common, region: c.region, subregion: c.subregion, landlocked: Boolean(c.landlocked),
+      borders: c.borders.map((b) => alpha2By3.get(b)).filter((b): b is string => Boolean(b)),
+      initial: letters.slice(0, 1).toUpperCase(), letters: letters.length
+    });
+  }
+}
+export function countryFacts(code: string) {
+  return factsByCode.get(code.toUpperCase()) ?? null;
+}
+export function allCountryFacts() {
+  return [...factsByCode.values()];
+}

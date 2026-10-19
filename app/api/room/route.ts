@@ -2,11 +2,15 @@ import { randomInt, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
 import { gameConfig, isGameId, type GameId } from "@/lib/games";
+import {
+  applyPass, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, runTurnAction, turnSnapshot, type TurnRoom
+} from "@/lib/turn-room";
 
 export const runtime = "nodejs";
 
 type Player = { id: string; token: string; name: string; host: boolean };
-type Room = { code: string; gameId?: GameId; status: "waiting" | "playing" | "ended"; createdAt: number; startedAt: number | null; players: Player[] };
+type GameMode = "live" | "turns";
+type Room = { code: string; gameId?: GameId; mode?: GameMode; status: "waiting" | "playing" | "ended"; createdAt: number; startedAt: number | null; players: Player[] };
 const roomKey = (code: string) => `bran:room:${code}`;
 const cleanPlayer = (p: Player) => ({ id: p.id, name: p.name, host: p.host });
 const publicPlayers = (players: Player[]) => players.map(cleanPlayer);
@@ -32,15 +36,18 @@ export async function POST(request: NextRequest) {
     if (body.action === "create") {
       if (body.gameId !== undefined && !isGameId(body.gameId)) return error("Choose a game to create a room.");
       const gameId: GameId = isGameId(body.gameId) ? body.gameId : "countries";
+      if (body.mode !== undefined && body.mode !== "live" && body.mode !== "turns") return error("Choose live or turns mode.");
+      // Only Country Sprint has a turn-based mode; other games always run live.
+      const mode: GameMode = gameId === "countries" && body.mode === "turns" ? "turns" : "live";
       const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       for (let attempt = 0; attempt < 8; attempt++) {
         const code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
         const token = randomUUID() + randomUUID();
         const player: Player = { id: randomUUID(), token, name, host: true };
-        const room: Room = { code, gameId, status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
+        const room: Room = { code, gameId, mode, status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
         const created = await redis.set(roomKey(code), room, { ex: ROOM_TTL_SECONDS, nx: true });
         if (created) return NextResponse.json({
-          code, gameId, token, playerId: player.id, status: room.status,
+          code, gameId, mode, token, playerId: player.id, status: room.status,
           startedAt: room.startedAt, players: publicPlayers(room.players)
         });
       }
@@ -67,18 +74,29 @@ export async function POST(request: NextRequest) {
         if #room.players < 2 then return cjson.encode({error='At least two players must join before starting.'}) end
         room.status = 'playing'
         room.startedAt = tonumber(ARGV[2])
+        if room.mode == 'turns' and ARGV[4] ~= '' then
+          local turn = cjson.decode(ARGV[4])
+          local order = {}
+          for _, player in ipairs(room.players) do table.insert(order, player.id) end
+          turn.order = order
+          room.turn = turn
+          room.claims = {}
+        end
         redis.call('SET', KEYS[1], cjson.encode(room), 'EX', tonumber(ARGV[3]))
         local players = {}
         for _, player in ipairs(room.players) do
           table.insert(players, {id=player.id, name=player.name, host=player.host})
         end
-        return cjson.encode({ok=true, gameId=room.gameId or 'countries', status=room.status, startedAt=room.startedAt, players=players})
+        return cjson.encode({ok=true, gameId=room.gameId or 'countries', mode=room.mode or 'live', status=room.status, startedAt=room.startedAt, players=players})
       `;
-      const result = await redis.eval(script, [key], [body.token, String(Date.now()), String(ROOM_TTL_SECONDS)]);
-      const started = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> }>(result);
+      const startedAt = Date.now();
+      const existing = await redis.get<Room>(key);
+      const turnJson = existing && isTurnsRoom(existing) ? JSON.stringify(initialTurnState(["pending"], startedAt)) : "";
+      const result = await redis.eval(script, [key], [body.token, String(startedAt), String(ROOM_TTL_SECONDS), turnJson]);
+      const started = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> }>(result);
       if (started.error) return error(started.error);
       if (!started.ok) return error("Could not start this round. Please try again.");
-      return NextResponse.json({ code, gameId: started.gameId ?? "countries", status: started.status, startedAt: started.startedAt, players: started.players });
+      return NextResponse.json({ code, gameId: started.gameId ?? "countries", mode: started.mode ?? "live", status: started.status, startedAt: started.startedAt, players: started.players });
     }
 
     if (body.action === "end") {
@@ -104,6 +122,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ code, status: ended.status });
     }
 
+    if (body.action === "pass") {
+      if (typeof body.token !== "string" || body.token.length < 32) return error("Room session is invalid.", 401);
+      const current = await redis.get<Room>(key);
+      if (!current) return error("Room not found. Check the code.", 404);
+      const me = current.players.find((player) => player.token === body.token);
+      if (!me) return error("This browser is not in that room.", 403);
+      if (!isTurnsRoom(current)) return error("Passing is only available in turn-based mode.", 409);
+      const outcome = await runTurnAction(redis, key, Date.now(), (room) => applyPass(room, me.id, Date.now()));
+      if ("error" in outcome) return error(outcome.error, outcome.status);
+      return NextResponse.json({ ok: true, status: outcome.room.status, turn: turnSnapshot(outcome.room, Date.now()).turn });
+    }
+
     if (body.action !== "join") return error("Choose create or join.");
     const playerId = randomUUID();
     const token = randomUUID() + randomUUID();
@@ -119,13 +149,13 @@ export async function POST(request: NextRequest) {
       for _, player in ipairs(room.players) do
         table.insert(players, {id=player.id, name=player.name, host=player.host})
       end
-      return cjson.encode({ok=true, gameId=room.gameId or 'countries', status=room.status, startedAt=room.startedAt, players=players})
+      return cjson.encode({ok=true, gameId=room.gameId or 'countries', mode=room.mode or 'live', status=room.status, startedAt=room.startedAt, players=players})
     `;
     const result = await redis.eval(script, [key], [playerId, token, name, String(ROOM_TTL_SECONDS)]);
-    const joined = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> }>(result);
+    const joined = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> }>(result);
     if (joined.error) return error(joined.error);
     if (!joined.ok) return error("Could not join that room. Please try again.");
-    return NextResponse.json({ code, gameId: joined.gameId ?? "countries", token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
+    return NextResponse.json({ code, gameId: joined.gameId ?? "countries", mode: joined.mode ?? "live", token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
   } catch (cause) {
     console.error("Room POST failed:", cause);
     return error("The room service is unavailable. Try again in a moment.", 503);
@@ -138,10 +168,28 @@ export async function GET(request: NextRequest) {
     const code = (request.nextUrl.searchParams.get("code") ?? "").toUpperCase();
     const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
     if (!/^[A-Z2-9]{6}$/.test(code) || token.length < 32) return error("Room session is invalid.", 401);
-    const room = await redis.get<Room>(roomKey(code));
-    if (!room) return error("Room not found. It may have expired.", 404);
-    const me = room.players.find((player) => player.token === token);
-    if (!me) return error("This browser is not in that room.", 403);
+    const found = await redis.get<Room>(roomKey(code));
+    if (!found) return error("Room not found. It may have expired.", 404);
+    if (!found.players.some((player) => player.token === token)) return error("This browser is not in that room.", 403);
+
+    if (isTurnsRoom(found) && found.status !== "waiting") {
+      // Turn-based rooms apply expired turns lazily and keep every claim inside the room JSON.
+      const now = Date.now();
+      const turnRoom = await loadSyncedTurnRoom(redis, roomKey(code), now) as TurnRoom | null;
+      if (!turnRoom?.turn) return error("Room not found. It may have expired.", 404);
+      const mine = turnRoom.players.find((player) => player.token === token)!;
+      const view = turnSnapshot(turnRoom, now);
+      const claimed = view.countryClaims as Record<string, string>;
+      return NextResponse.json({
+        code: turnRoom.code, gameId: "countries", mode: "turns", status: turnRoom.status, startedAt: turnRoom.startedAt,
+        players: publicPlayers(turnRoom.players as Player[]), playerId: mine.id,
+        myGuesses: (turnRoom.claims ?? []).filter((claim) => claim.playerId === mine.id).reverse()
+          .map((claim) => ({ code: claim.code, name: (view.claimLog as { code: string; name: string }[]).find((entry) => entry.code === claim.code)?.name ?? claim.code })),
+        lockedCountryCodes: Object.keys(claimed), ...view
+      });
+    }
+    const room = found;
+    const me = room.players.find((player) => player.token === token)!;
 
     const roundMs = gameConfig(room.gameId).durationSeconds * 1000;
     const timedOut = room.status === "playing" && room.startedAt !== null && Date.now() >= room.startedAt + roundMs;
@@ -162,6 +210,7 @@ export async function GET(request: NextRequest) {
       myGuesses: Object.entries(ownGuesses).map(([countryCode, countryName]) => ({ code: countryCode, name: countryName })),
       lockedCountryCodes, countryClaims
     };
+    response.mode = room.mode ?? "live";
     if (room.status === "ended") {
       const results = await Promise.all(room.players.map(async (player) => {
         const guesses = await redis.hgetall<Record<string, string>>(`bran:guesses:${code}:${player.id}`) ?? {};
