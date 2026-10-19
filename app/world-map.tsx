@@ -14,10 +14,10 @@ const projection = geoEqualEarth().fitSize([900, 450], countries);
 const path = geoPath(projection);
 
 type MapPlayer = { id: string; name: string };
-type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string };
+type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string };
 
 /** A shared board: every claimed country is filled with its owner's colour. */
-export function WorldMap({ claims, players, youId }: WorldMapProps) {
+export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP" }: WorldMapProps) {
   const ids = useMemo(() => players.map((player) => player.id), [players]);
   const names = useMemo(() => new Map(players.map((player) => [player.id, player.name])), [players]);
   const counts = useMemo(() => {
@@ -28,7 +28,7 @@ export function WorldMap({ claims, players, youId }: WorldMapProps) {
   const total = Object.keys(claims).length;
 
   return <section className="world-map" aria-label="Live world map of claimed countries">
-    <div className="world-map-heading"><span>LIVE WORLD MAP</span><b>{total} CLAIMED</b></div>
+    <div className="world-map-heading"><span>{heading}</span><b>{total} CLAIMED</b></div>
     <div className="map-legend">{players.map((player) => <span key={player.id} className="legend-item">
       <i style={{ background: playerColor(ids, player.id) }}/>{player.name}{player.id === youId ? " (you)" : ""}<b>{counts.get(player.id) ?? 0}</b>
     </span>)}</div>
