@@ -72,7 +72,8 @@ test("two players can join, start, keep guesses private, and reveal together at 
   assert.equal((await guess(guest, "US")).status, 200);
   const beforeReveal = await json(await room(guest));
   assert.deepEqual(beforeReveal.myGuesses.map((answer: { code: string }) => answer.code), ["US"]);
-  assert.deepEqual([...beforeReveal.lockedCountryCodes].sort(), ["CA", "US"], "the public country board tracks claimed countries without player identities");
+  assert.deepEqual([...beforeReveal.lockedCountryCodes].sort(), ["CA", "US"], "the public country board tracks claimed countries");
+  assert.deepEqual(beforeReveal.countryClaims, { CA: host.playerId, US: guest.playerId }, "the live board shows which player claimed each country");
   assert.equal("results" in beforeReveal, false, "other players' answers stay hidden until the timer ends");
 
   const realNow = Date.now;

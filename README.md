@@ -9,7 +9,7 @@ A two- or three-player naming-game lobby hosted on Vercel. Players can choose a 
 3. Redeploy the project. The app detects the Redis REST variables added by the integration, including database-prefixed names such as bran_KV_REST_API_URL and bran_KV_REST_API_TOKEN.
 4. Share the deployed link with one or two friends. One player creates a room and sends the six-character code.
 
-No SQL database or sign-in provider is needed. Room codes and private player tokens identify each player. The API keeps room state in Redis and only returns every player’s answers after the round ends.
+No SQL database or sign-in provider is needed. Room codes and private player tokens identify each player. The API keeps room state in Redis. In the countries game every claim is shown live on the map in its owner's colour; in the other games, answers stay private until the round ends.
 
 ## Local development
 
