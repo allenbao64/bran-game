@@ -8,7 +8,7 @@ import { applyClaim, isTurnsRoom, runTurnAction } from "@/lib/turn-room";
 
 export const runtime = "nodejs";
 type Player = { id: string; token: string; name: string; host: boolean };
-type Room = { code: string; mode?: "live" | "turns"; gameId?: "countries" | "champions" | "overwatch"; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
+type Room = { code: string; mode?: "live" | "turns" | "empire"; gameId?: "countries" | "champions" | "overwatch"; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
 
 function parseScriptResult<T>(result: unknown): T {
   if (typeof result === "string") return JSON.parse(result) as T;
@@ -39,6 +39,9 @@ export async function POST(request: NextRequest) {
     if (!answer) return NextResponse.json({ error: `That answer is not on the ${answerType} list.` }, { status: 400 });
     const player = room.players.find((entry) => entry.token === token);
     if (!player) return NextResponse.json({ error: "This browser is not in that room." }, { status: 403 });
+    if (gameId === "countries" && room.mode === "empire") {
+      return NextResponse.json({ error: "Empire rooms use their own actions." }, { status: 409 });
+    }
     if (gameId === "countries" && isTurnsRoom(room)) {
       // Turn-based claims are validated and written by the compare-and-set engine, not the live-race script.
       const now = Date.now();

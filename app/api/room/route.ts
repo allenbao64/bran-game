@@ -5,11 +5,12 @@ import { gameConfig, isGameId, type GameId } from "@/lib/games";
 import {
   applyPass, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, runTurnAction, turnSnapshot, type TurnRoom
 } from "@/lib/turn-room";
+import { empireSnapshot, isEmpireRoom, loadSyncedEmpireRoom } from "@/lib/empire-room";
 
 export const runtime = "nodejs";
 
 type Player = { id: string; token: string; name: string; host: boolean };
-type GameMode = "live" | "turns";
+type GameMode = "live" | "turns" | "empire";
 type Room = { code: string; gameId?: GameId; mode?: GameMode; status: "waiting" | "playing" | "ended"; createdAt: number; startedAt: number | null; players: Player[] };
 const roomKey = (code: string) => `bran:room:${code}`;
 const cleanPlayer = (p: Player) => ({ id: p.id, name: p.name, host: p.host });
@@ -36,9 +37,9 @@ export async function POST(request: NextRequest) {
     if (body.action === "create") {
       if (body.gameId !== undefined && !isGameId(body.gameId)) return error("Choose a game to create a room.");
       const gameId: GameId = isGameId(body.gameId) ? body.gameId : "countries";
-      if (body.mode !== undefined && body.mode !== "live" && body.mode !== "turns") return error("Choose live or turns mode.");
+      if (body.mode !== undefined && body.mode !== "live" && body.mode !== "turns" && body.mode !== "empire") return error("Choose live, turns or empire mode.");
       // Only Country Sprint has a turn-based mode; other games always run live.
-      const mode: GameMode = gameId === "countries" && body.mode === "turns" ? "turns" : "live";
+      const mode: GameMode = gameId === "countries" && (body.mode === "turns" || body.mode === "empire") ? body.mode : "live";
       const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       for (let attempt = 0; attempt < 8; attempt++) {
         const code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
@@ -172,6 +173,19 @@ export async function GET(request: NextRequest) {
     if (!found) return error("Room not found. It may have expired.", 404);
     if (!found.players.some((player) => player.token === token)) return error("This browser is not in that room.", 403);
 
+    if (isEmpireRoom(found) && found.status !== "waiting") {
+      // Empire rooms create the game on first read after the start, then apply expired turns lazily.
+      const now = Date.now();
+      const empireRoom = await loadSyncedEmpireRoom(redis, roomKey(code), now);
+      if (!empireRoom) return error("Room not found. It may have expired.", 404);
+      const mine = empireRoom.players.find((player) => player.token === token)!;
+      const view = empireSnapshot(empireRoom, now);
+      return NextResponse.json({
+        code: empireRoom.code, gameId: "countries", mode: "empire", status: empireRoom.status, startedAt: empireRoom.startedAt,
+        players: publicPlayers(empireRoom.players as Player[]), playerId: mine.id, myGuesses: [],
+        lockedCountryCodes: Object.keys(view.countryClaims), ...view
+      });
+    }
     if (isTurnsRoom(found) && found.status !== "waiting") {
       // Turn-based rooms apply expired turns lazily and keep every claim inside the room JSON.
       const now = Date.now();

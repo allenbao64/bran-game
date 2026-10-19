@@ -65,6 +65,14 @@ export class MemoryRedis {
       this.hashes.set(keys[2], guesses);
       return { ok: true };
     }
+    if (script.includes("tonumber(room.empireVersion or 0) ~= tonumber(ARGV[1])")) {
+      // Compare-and-set on the Empire version, mirroring EMPIRE_CAS_SCRIPT (atomic: no await between read and write).
+      const current = this.values.get(key) as (StoredRoom & { empireVersion?: number }) | undefined;
+      if (!current) return { error: "Room not found." };
+      if (current.status !== "playing" || (current.empireVersion ?? 0) !== Number(args[0])) return { conflict: true };
+      this.values.set(key, JSON.parse(args[1]));
+      return { ok: true };
+    }
     if (script.includes("tonumber(room.turn.number) ~= tonumber(ARGV[1])")) {
       // Compare-and-set on the turn number, mirroring TURN_CAS_SCRIPT.
       // Real Lua runs atomically: read and write with no await in between.

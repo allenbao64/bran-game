@@ -12,7 +12,7 @@ import { cardFits, cardLabel, computeAwards, computeScores, dealCard, isDoubleRo
 export type TurnRoom = {
   code: string;
   gameId?: string;
-  mode?: "live" | "turns";
+  mode?: "live" | "turns" | "empire";
   status: "waiting" | "playing" | "ended";
   startedAt: number | null;
   players: { id: string; token: string; name: string; host: boolean }[];
