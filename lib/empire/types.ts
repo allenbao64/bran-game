@@ -7,7 +7,7 @@
 
 export const EMPIRE_RULES = {
   turnMs: 20_000,
-  winPoints: 20,
+  winPoints: 15,
   roundCap: 15,
   startTokens: 2,
   /** After this round ends, the last-place player gets one extra steal token (once per game). */
