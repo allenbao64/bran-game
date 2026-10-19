@@ -1,17 +1,9 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { geoEqualEarth, geoPath } from "d3-geo";
-import { feature } from "topojson-client";
-import type { GeometryCollection, Topology } from "topojson-specification";
-import type { FeatureCollection, Geometry, GeoJsonProperties } from "geojson";
+import { mapDots, mapFeatures as countries, mapPath as path } from "@/lib/world-geometry";
 import { countryCodeFromNumericId } from "@/lib/countries";
 import { playerColor } from "@/lib/player-colors";
-
-const WORLD_ATLAS = require("world-atlas/countries-110m.json") as Topology<{ countries: GeometryCollection }>;
-const countries = feature(WORLD_ATLAS, WORLD_ATLAS.objects.countries) as FeatureCollection<Geometry, GeoJsonProperties>;
-const projection = geoEqualEarth().fitSize([900, 450], countries);
-const path = geoPath(projection);
 
 type MapPlayer = { id: string; name: string };
 /** `emphasis` maps a player id to the country codes to outline thickly in that player's colour (their largest territory). */
@@ -52,6 +44,15 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
           style={owner ? { fill: playerColor(ids, owner), ...(outlined ? { stroke: playerColor(ids, owner) } : {}) } : undefined}>
           <title>{ownerName ? `Claimed by ${ownerName}${owner === youId ? " (you)" : ""}${outlined ? " · part of their largest territory" : ""}` : "Available country"}</title>
         </path>;
+      })}
+      {mapDots.map(({ code, x, y }) => {
+        const owner = claims[code];
+        const ownerName = owner ? names.get(owner) ?? "Another player" : undefined;
+        const outlined = emphasised.has(code);
+        return <circle key={`dot-${code}`} cx={x} cy={y} r={3.2} data-code={code} className={`map-dot${owner ? " claimed" : ""}${outlined ? " territory" : ""}`}
+          style={owner ? { fill: playerColor(ids, owner) } : undefined}>
+          <title>{ownerName ? `Claimed by ${ownerName}${owner === youId ? " (you)" : ""}${outlined ? " · part of their largest territory" : ""}` : "Available country"}</title>
+        </circle>;
       })}
     </svg>
   </section>;
