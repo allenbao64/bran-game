@@ -4,10 +4,11 @@ import { championByCode } from "@/lib/champions";
 import { overwatchHeroByCode } from "@/lib/overwatch-heroes";
 import { gameConfig } from "@/lib/games";
 import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
+import { applyClaim, isTurnsRoom, runTurnAction } from "@/lib/turn-room";
 
 export const runtime = "nodejs";
 type Player = { id: string; token: string; name: string; host: boolean };
-type Room = { code: string; gameId?: "countries" | "champions" | "overwatch"; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
+type Room = { code: string; mode?: "live" | "turns" | "empire"; gameId?: "countries" | "champions" | "overwatch"; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
 
 function parseScriptResult<T>(result: unknown): T {
   if (typeof result === "string") return JSON.parse(result) as T;
@@ -38,6 +39,16 @@ export async function POST(request: NextRequest) {
     if (!answer) return NextResponse.json({ error: `That answer is not on the ${answerType} list.` }, { status: 400 });
     const player = room.players.find((entry) => entry.token === token);
     if (!player) return NextResponse.json({ error: "This browser is not in that room." }, { status: 403 });
+    if (gameId === "countries" && room.mode === "empire") {
+      return NextResponse.json({ error: "Empire rooms use their own actions." }, { status: 409 });
+    }
+    if (gameId === "countries" && isTurnsRoom(room)) {
+      // Turn-based claims are validated and written by the compare-and-set engine, not the live-race script.
+      const now = Date.now();
+      const outcome = await runTurnAction(redis, key, now, (turnRoom) => applyClaim(turnRoom, player.id, answer.code, now));
+      if ("error" in outcome) return NextResponse.json({ error: outcome.error }, { status: outcome.status });
+      return NextResponse.json({ ok: true });
+    }
     const roundMs = gameConfig(gameId).durationSeconds * 1000;
     if (room.status !== "playing" || room.startedAt === null || Date.now() >= room.startedAt + roundMs) {
       return NextResponse.json({ error: "The round has ended." }, { status: 409 });

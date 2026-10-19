@@ -4,6 +4,10 @@ type StoredRoom = {
   status: "waiting" | "playing" | "ended";
   createdAt: number;
   startedAt: number | null;
+  mode?: string;
+  turnSeconds?: number;
+  turn?: { number: number; order: string[] };
+  claims?: unknown[];
   players: { id: string; token: string; name: string; host: boolean }[];
 };
 
@@ -62,6 +66,23 @@ export class MemoryRedis {
       this.hashes.set(keys[2], guesses);
       return { ok: true };
     }
+    if (script.includes("tonumber(room.empireVersion or 0) ~= tonumber(ARGV[1])")) {
+      // Compare-and-set on the Empire version, mirroring EMPIRE_CAS_SCRIPT (atomic: no await between read and write).
+      const current = this.values.get(key) as (StoredRoom & { empireVersion?: number }) | undefined;
+      if (!current) return { error: "Room not found." };
+      if (current.status !== "playing" || (current.empireVersion ?? 0) !== Number(args[0])) return { conflict: true };
+      this.values.set(key, JSON.parse(args[1]));
+      return { ok: true };
+    }
+    if (script.includes("tonumber(room.turn.number) ~= tonumber(ARGV[1])")) {
+      // Compare-and-set on the turn number, mirroring TURN_CAS_SCRIPT.
+      // Real Lua runs atomically: read and write with no await in between.
+      const current = this.values.get(key) as StoredRoom | undefined;
+      if (!current) return { error: "Room not found." };
+      if (current.status !== "playing" || !current.turn || current.turn.number !== Number(args[0])) return { conflict: true };
+      this.values.set(key, JSON.parse(args[1]));
+      return { ok: true };
+    }
     if (script.includes("Only the host can start this round.")) {
       if (!room) return { error: "Room not found. Check the code." };
       const host = room.players.find((player) => player.token === args[0]);
@@ -70,9 +91,13 @@ export class MemoryRedis {
       if (room.players.length < 2) return { error: "At least two players must join before starting." };
       room.status = "playing";
       room.startedAt = Number(args[1]);
+      if (room.mode === "turns" && args[3]) {
+        room.turn = { ...JSON.parse(args[3]), order: room.players.map((player) => player.id) };
+        room.claims = [];
+      }
       await this.set(key, room);
       return {
-        ok: true, gameId: room.gameId ?? "countries", status: room.status, startedAt: room.startedAt,
+        ok: true, gameId: room.gameId ?? "countries", mode: room.mode ?? "live", status: room.status, startedAt: room.startedAt,
         players: room.players.map(({ id, name, host: isHost }) => ({ id, name, host: isHost }))
       };
     }
@@ -94,7 +119,7 @@ export class MemoryRedis {
       room.players.push({ id: args[0], token: args[1], name: args[2], host: false });
       await this.set(key, room);
       return {
-        ok: true, gameId: room.gameId ?? "countries", status: room.status, startedAt: room.startedAt,
+        ok: true, gameId: room.gameId ?? "countries", mode: room.mode ?? "live", turnSeconds: room.turnSeconds, status: room.status, startedAt: room.startedAt,
         players: room.players.map(({ id, name, host }) => ({ id, name, host }))
       };
     }
