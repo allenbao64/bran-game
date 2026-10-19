@@ -86,25 +86,3 @@ export function countryCodeFromNumericId(id: string | number | undefined) {
   return id === undefined ? undefined : byNumericCode.get(String(id).padStart(3, "0"));
 }
 
-/** Bigger scores for smaller countries: obscure answers reward knowledge, not typing speed. */
-export function countryPoints(code: string) {
-  const area = rows.find((c) => c.cca2 === code.toUpperCase())?.area ?? 0;
-  return area >= 500_000 ? 1 : area >= 50_000 ? 2 : area >= 5_000 ? 3 : 4;
-}
-
-export function allCountryCodes() {
-  return [...byCode.keys()];
-}
-
-/** Hint-safe facts about a country: never the full name. */
-export function countryHintFacts(code: string) {
-  const answer = byCode.get(code.toUpperCase());
-  const row = rows.find((c) => c.cca2 === code.toUpperCase());
-  if (!answer) return null;
-  return {
-    letter: answer.name.charAt(0).toUpperCase(),
-    region: row?.subregion || row?.region || "Somewhere on Earth",
-    length: answer.name.replace(/[^A-Za-z]/g, "").length,
-    points: countryPoints(code)
-  };
-}
