@@ -121,7 +121,8 @@ test("over 500 seeded deals, every non-wild card fits enough unclaimed countries
     for (let seed = 1; seed <= 500; seed++) {
       const count = 2 + (seed % 2);
       const hand = dealHand(count, dealCtx(seed, unclaimed));
-      assert.equal(hand.length, count, `seed ${seed}`);
+      assert.ok(hand.length >= 1 && hand.length <= count, `seed ${seed}: hand of ${hand.length}`);
+      if (unclaimed === ALL_CODES) assert.equal(hand.length, count, `a full board always deals a full hand (seed ${seed})`);
       const keys = hand.filter((c) => c.kind !== "wild").map(cardKey);
       assert.equal(new Set(keys).size, keys.length, `duplicate card in seed ${seed}`);
       assert.ok(hand.filter((c) => c.kind === "wild").length <= 1, `two wilds in seed ${seed}`);
@@ -138,12 +139,12 @@ test("a deal is deterministic for a seeded rng", () => {
   assert.deepEqual(dealHand(3, dealCtx(42, ALL_CODES)), dealHand(3, dealCtx(42, ALL_CODES)));
 });
 
-test("a nearly empty unclaimed list falls back to wild", () => {
+test("a nearly empty unclaimed list falls back to a single wild, never two identical wilds", () => {
   const none = dealHand(2, dealCtx(7, []));
-  assert.deepEqual(none, [{ kind: "wild" }, { kind: "wild" }]);
+  assert.deepEqual(none, [{ kind: "wild" }]);
   const one = dealHand(2, dealCtx(7, ["FR"]));
-  assert.equal(one.length, 2);
-  assert.ok(one.every((c) => c.kind === "wild"));
+  assert.deepEqual(one, [{ kind: "wild" }]);
+  assert.deepEqual(dealHand(3, dealCtx(7, ["FR"])), [{ kind: "wild" }]);
 });
 
 test("wildRound deals only wild cards", () => {

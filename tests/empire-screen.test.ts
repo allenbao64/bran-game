@@ -59,3 +59,17 @@ test("the Empire results screen names the winner and breaks down scores", () => 
   assert.match(html, /Final score/);
   assert.match(html, /WINNER/);
 });
+
+test("the Empire screen copes with a one-card hand", () => {
+  const r = room();
+  r.empire = { ...r.empire!, hand: [{ kind: "wild" }] };
+  const snap = empireSnapshot(r, 2000);
+  const view = snap.empire!;
+  assert.equal(view.hand.length, 1);
+  const html = renderToStaticMarkup(React.createElement(EmpireGame, {
+    view, players, playerId: view.currentPlayerId!, countryClaims: snap.countryClaims, skewMs: 0, notice: "",
+    busy: false, onAction: async () => true, onNotice: () => {}, onEnd: () => {}, colorOf
+  }));
+  assert.equal((html.match(/empire-card/g) ?? []).length, 1);
+  assert.match(html, /Any country/);
+});

@@ -127,6 +127,7 @@ export function dealHand(count: number, ctx: DealContext): EmpireCard[] {
       continue;
     }
     // Sampling failed: fall back to a wild card, or, if one is already in the hand, to any valid card.
+    // Two identical wilds are never dealt outside a wildRound, so when nothing else fits the hand is simply shorter (never empty: slot 0 can always fall back to wild).
     if (!hasWild) {
       hasWild = true;
       hand.push(wild());
@@ -138,7 +139,7 @@ export function dealHand(count: number, ctx: DealContext): EmpireCard[] {
       used.add(cardKey(picked));
       hand.push(picked);
     } else {
-      hand.push(wild());
+      break;
     }
   }
   return hand;

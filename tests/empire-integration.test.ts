@@ -791,9 +791,11 @@ test("applyAction never mutates its input state", () => {
   assert.equal(JSON.stringify(start), before);
 });
 
-test("every dealt hand has distinct cards", { todo: "BUG: cards.dealHand can return two identical wild cards when about 5 or fewer countries are unclaimed (fallback path pushes a second wild)" }, () => {
-  // Small unclaimed pools force the sampler to fall back. A hand should never repeat a card.
+test("every dealt hand has distinct cards", () => {
+  // Small unclaimed pools force the sampler to fall back. A hand should never repeat a card;
+  // when nothing else can be dealt it is shorter instead (never empty).
   let repeated: string | null = null;
+  let shortHands = 0;
   for (let seed = 1; seed <= 500 && repeated === null; seed += 1) {
     const rng = mulberry32(seed);
     const pool = ALL.filter(() => rng() < 0.02);
@@ -805,9 +807,59 @@ test("every dealt hand has distinct cards", { todo: "BUG: cards.dealHand can ret
       event: null,
       rng: mulberry32(seed + 1000)
     });
-    assert.equal(hand.length, 2, `seed ${seed}: wrong hand size`);
+    assert.ok(hand.length >= 1 && hand.length <= 2, `seed ${seed}: hand size ${hand.length}`);
+    if (hand.length < 2) shortHands += 1;
     const keys = hand.map((card) => JSON.stringify(card));
     if (new Set(keys).size !== keys.length) repeated = `seed ${seed}: ${keys.join(" and ")}`;
   }
   assert.equal(repeated, null, `a hand repeated a card (${repeated})`);
+  assert.ok(shortHands > 0, "tiny pools should produce at least one shorter hand");
+});
+
+test("a wildRound still deals identical wild cards, and a nearly empty board deals a single wild", () => {
+  const ctx = (unclaimed: string[], event: EmpireState["event"]) => ({
+    ownedByMe: new Set<string>(), neighbours: (c: string) => geo.neighbours(c), unclaimed, event, rng: mulberry32(5)
+  });
+  assert.deepEqual(cards.dealHand(3, ctx(ALL, { kind: "wildRound" })), [WILD, WILD, WILD]);
+  assert.deepEqual(cards.dealHand(3, ctx(["FR"], null)), [WILD], "no duplicate wilds outside a wildRound");
+  assert.deepEqual(cards.dealHand(2, ctx([], null)), [WILD]);
+});
+
+test("the game plays on with a 1-card hand: pick 0 works, pick 1 is rejected, and the claim goes through", () => {
+  const deps = makeDeps(21);
+  const start = stateOf([player("p1", "FR"), player("p2", "JP")], { FR: "p1", JP: "p2" }, { hand: [WILD] });
+  rejected(actions.applyAction(start, "p1", { type: "pick", index: 1 }, 10, deps), 400);
+  const picked = ok(actions.applyAction(start, "p1", { type: "pick", index: 0 }, 10, deps));
+  const claimed = ok(actions.applyAction(picked, "p1", { type: "claim", code: "DE" }, 11, deps));
+  assert.equal(claimed.owners.DE, "p1");
+  assert.ok(claimed.hand.length >= 1, "the next player is always dealt at least one card");
+});
+
+test("late-game hands from real turns are never empty and never repeat a card", () => {
+  // Own nearly the whole world so very few countries stay unclaimed, then pass through several turns.
+  const keep = ALL.slice(0, 4).filter((c) => c !== "FR" && c !== "JP");
+  const owners: Record<string, string> = {};
+  for (const code of ALL) if (!keep.includes(code)) owners[code] = code === "JP" ? "p2" : "p1";
+  owners.FR = "p1"; owners.JP = "p2";
+  let state = stateOf([player("p1", "FR"), player("p2", "JP")], owners, { hand: [WILD] });
+  const deps = makeDeps(33);
+  for (let turn = 0; turn < 6 && !state.finished; turn += 1) {
+    state = ok(actions.applyAction(state, state.players[state.seat].id, { type: "pass" }, 100 + turn, deps));
+    if (state.finished) break;
+    assert.ok(state.hand.length >= 1, `turn ${turn}: empty hand`);
+    const keys = state.hand.map((card) => JSON.stringify(card));
+    if (state.event?.kind !== "wildRound") assert.equal(new Set(keys).size, keys.length, `turn ${turn}: ${keys.join(" and ")}`);
+  }
+});
+
+test("claiming an owned country says it is owned before it says it doesn't fit the card", () => {
+  const deps = makeDeps(41);
+  const misfit: EmpireCard = { kind: "letter", letter: "Z" };
+  const start = stateOf([player("p1", "FR"), player("p2", "JP")], { FR: "p1", JP: "p2", DE: "p2" }, { hand: [misfit, WILD], chosen: 0 });
+  const theirs = rejected(actions.applyAction(start, "p1", { type: "claim", code: "DE" }, 10, deps), 409);
+  assert.match(theirs.error, /belongs to another player/);
+  const mine = rejected(actions.applyAction(start, "p1", { type: "claim", code: "FR" }, 10, deps), 409);
+  assert.match(mine.error, /already own/);
+  const free = rejected(actions.applyAction(start, "p1", { type: "claim", code: "ES" }, 10, deps), 400);
+  assert.match(free.error, /doesn't fit/);
 });
