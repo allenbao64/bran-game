@@ -9,6 +9,12 @@ export const runtime = "nodejs";
 type Player = { id: string; token: string; name: string; host: boolean };
 type Room = { code: string; gameId?: "countries" | "champions" | "overwatch"; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
 
+function parseScriptResult<T>(result: unknown): T {
+  if (typeof result === "string") return JSON.parse(result) as T;
+  if (result !== null && typeof result === "object") return result as T;
+  throw new Error("Unexpected response from Redis script.");
+}
+
 export async function POST(request: NextRequest) {
   try {
     const redis = getRedis();
@@ -36,10 +42,38 @@ export async function POST(request: NextRequest) {
     if (room.status !== "playing" || room.startedAt === null || Date.now() >= room.startedAt + roundMs) {
       return NextResponse.json({ error: "The round has ended." }, { status: 409 });
     }
-    const guessKey = `bran:guesses:${code}:${player.id}`;
-    const added = await redis.hsetnx(guessKey, answer.code, answer.name);
-    if (added) await redis.expire(guessKey, ROOM_TTL_SECONDS);
-    if (!added) return NextResponse.json({ error: `You already named that ${answerType}.` }, { status: 409 });
+
+    // One Lua transaction makes the claim check and score atomic, so two players
+    // racing the same answer cannot both score it.
+    const script = `
+      local raw = redis.call('GET', KEYS[1])
+      if not raw then return cjson.encode({error='Room not found.'}) end
+      local room = cjson.decode(raw)
+      local player = nil
+      for _, entry in ipairs(room.players) do
+        if entry.token == ARGV[1] then player = entry end
+      end
+      if not player then return cjson.encode({error='This browser is not in that room.', status=403}) end
+      if room.status ~= 'playing' or not room.startedAt or tonumber(ARGV[4]) >= room.startedAt + tonumber(ARGV[5]) then
+        return cjson.encode({error='The round has ended.', status=409})
+      end
+      local owner = redis.call('HGET', KEYS[2], ARGV[2])
+      if owner then
+        if owner == player.id then return cjson.encode({error='You already claimed that answer.', status=409}) end
+        return cjson.encode({error='Another player already claimed that answer.', status=409})
+      end
+      redis.call('HSET', KEYS[2], ARGV[2], player.id)
+      redis.call('EXPIRE', KEYS[2], tonumber(ARGV[6]))
+      redis.call('HSET', KEYS[3], ARGV[2], ARGV[3])
+      redis.call('EXPIRE', KEYS[3], tonumber(ARGV[6]))
+      return cjson.encode({ok=true})
+    `;
+    const result = await redis.eval(script,
+      [key, `bran:claimed:${code}`, `bran:guesses:${code}:${player.id}`],
+      [token, answer.code, answer.name, String(Date.now()), String(roundMs), String(ROOM_TTL_SECONDS)]);
+    const claim = parseScriptResult<{ ok?: boolean; error?: string; status?: number }>(result);
+    if (claim.error) return NextResponse.json({ error: claim.error }, { status: claim.status ?? 409 });
+    if (!claim.ok) return NextResponse.json({ error: `Could not claim that ${answerType}. Please try again.` }, { status: 503 });
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "The room service is unavailable. Try again in a moment." }, { status: 503 });

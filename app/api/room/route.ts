@@ -150,10 +150,16 @@ export async function GET(request: NextRequest) {
       await redis.set(roomKey(code), room, { ex: ROOM_TTL_SECONDS });
     }
     const ownGuesses = await redis.hgetall<Record<string, string>>(`bran:guesses:${code}:${me.id}`) ?? {};
+    // Country rounds intentionally expose the shared board without revealing the
+    // player behind each claim. Other answer lists remain private until results.
+    const lockedCountryCodes = gameConfig(room.gameId).id === "countries"
+      ? await redis.hkeys(`bran:claimed:${code}`)
+      : [];
     const response: Record<string, unknown> = {
       code: room.code, gameId: gameConfig(room.gameId).id, status: room.status, startedAt: room.startedAt,
       players: publicPlayers(room.players), playerId: me.id,
-      myGuesses: Object.entries(ownGuesses).map(([countryCode, countryName]) => ({ code: countryCode, name: countryName }))
+      myGuesses: Object.entries(ownGuesses).map(([countryCode, countryName]) => ({ code: countryCode, name: countryName })),
+      lockedCountryCodes
     };
     if (room.status === "ended") {
       const results = await Promise.all(room.players.map(async (player) => {

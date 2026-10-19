@@ -4,6 +4,7 @@ export type CountryAnswer = { code: string; name: string };
 const rows = countries.filter((c) => c.unMember || ["VA", "PS", "TW", "XK"].includes(c.cca2));
 const byName = new Map<string, CountryAnswer>();
 const byCode = new Map<string, CountryAnswer>();
+const byNumericCode = new Map<string, string>();
 
 export function normalizeCountryName(value: string) {
   return value.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -12,6 +13,7 @@ export function normalizeCountryName(value: string) {
 for (const c of rows) {
   const answer = { code: c.cca2, name: c.name.common };
   byCode.set(answer.code, answer);
+  if (c.ccn3) byNumericCode.set(c.ccn3.padStart(3, "0"), answer.code);
   byName.set(normalizeCountryName(c.name.common), answer);
   byName.set(normalizeCountryName(c.name.official), answer);
 }
@@ -38,4 +40,9 @@ export function resolveCountry(name: string) {
 }
 export function countryByCode(code: string) {
   return byCode.get(code.toUpperCase()) ?? null;
+}
+
+/** Converts the numeric ISO identifiers used by the world-map data to ISO alpha-2. */
+export function countryCodeFromNumericId(id: string | number | undefined) {
+  return id === undefined ? undefined : byNumericCode.get(String(id).padStart(3, "0"));
 }

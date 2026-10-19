@@ -66,9 +66,13 @@ test("two players can join, start, keep guesses private, and reveal together at 
 
   assert.equal((await guess(host, "CA")).status, 200);
   assert.equal((await guess(host, "CA")).status, 409, "a player cannot score one country twice");
+  const stolenCountry = await guess(guest, "CA");
+  assert.equal(stolenCountry.status, 409, "a country claimed by one player must be locked for everyone");
+  assert.match((await json(stolenCountry)).error, /Another player already claimed/);
   assert.equal((await guess(guest, "US")).status, 200);
   const beforeReveal = await json(await room(guest));
   assert.deepEqual(beforeReveal.myGuesses.map((answer: { code: string }) => answer.code), ["US"]);
+  assert.deepEqual([...beforeReveal.lockedCountryCodes].sort(), ["CA", "US"], "the public country board tracks claimed countries without player identities");
   assert.equal("results" in beforeReveal, false, "other players' answers stay hidden until the timer ends");
 
   const realNow = Date.now;
@@ -96,6 +100,11 @@ test("champion rooms share the selected game and end after two minutes", async (
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ code: host.code, token: host.token, answerCode: resolveChampion("Kha Zix")!.code })
   }))).status, 200);
+  const claimedChampion = await guessPost(new NextRequest("http://localhost/api/guess", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: host.code, token: guest.token, answerCode: resolveChampion("Kha Zix")!.code })
+  }));
+  assert.equal(claimedChampion.status, 409, "champions are globally locked within a room");
   const wrongGameAnswer = await guessPost(new NextRequest("http://localhost/api/guess", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ code: host.code, token: host.token, answerCode: "CA" })
@@ -127,6 +136,11 @@ test("Overwatch rooms accept hero names, share them privately, and end after two
     body: JSON.stringify({ code: host.code, token: host.token, answerCode: lucio.code })
   }));
   assert.equal(scored.status, 200);
+  const claimedHero = await guessPost(new NextRequest("http://localhost/api/guess", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: host.code, token: guest.token, answerCode: lucio.code })
+  }));
+  assert.equal(claimedHero.status, 409, "heroes are globally locked within a room");
 
   const crossGameAnswer = await guessPost(new NextRequest("http://localhost/api/guess", {
     method: "POST", headers: { "content-type": "application/json" },

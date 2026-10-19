@@ -36,11 +36,32 @@ export class MemoryRedis {
     return 1;
   }
 
+  async hkeys(key: string) {
+    return Object.keys(this.hashes.get(key) ?? {});
+  }
+
   async expire() { return 1; }
 
   async eval(script: string, keys: string[], args: string[]) {
     const key = keys[0];
     const room = await this.get<StoredRoom>(key);
+    if (script.includes("Another player already claimed that answer.")) {
+      if (!room) return { error: "Room not found." };
+      const player = room.players.find((entry) => entry.token === args[0]);
+      if (!player) return { error: "This browser is not in that room.", status: 403 };
+      if (room.status !== "playing" || room.startedAt === null || Number(args[3]) >= room.startedAt + Number(args[4])) {
+        return { error: "The round has ended.", status: 409 };
+      }
+      const claims = this.hashes.get(keys[1]) ?? {};
+      const owner = claims[args[1]];
+      if (owner) return { error: owner === player.id ? "You already claimed that answer." : "Another player already claimed that answer.", status: 409 };
+      claims[args[1]] = player.id;
+      this.hashes.set(keys[1], claims);
+      const guesses = this.hashes.get(keys[2]) ?? {};
+      guesses[args[1]] = args[2];
+      this.hashes.set(keys[2], guesses);
+      return { ok: true };
+    }
     if (script.includes("Only the host can start this round.")) {
       if (!room) return { error: "Room not found. Check the code." };
       const host = room.players.find((player) => player.token === args[0]);

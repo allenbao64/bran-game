@@ -121,6 +121,7 @@ test("a host can start a two-player room from the lobby", async () => {
   await act(async () => { startButton!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.ok(calls.some((call) => call.body?.action === "start"));
   assert.match(doc.body.textContent ?? "", /COUNTRY SPRINT/);
+  assert.ok(doc.querySelector(".world-map"), "country rounds should show the shared live map");
 
   doc.defaultView!.confirm = () => true;
   const stopButton = [...doc.querySelectorAll("button")].find((button) => button.textContent?.includes("End round & reveal"));

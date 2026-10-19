@@ -5,6 +5,7 @@ import { resolveCountry } from "@/lib/countries";
 import { resolveChampion } from "@/lib/champions";
 import { resolveOverwatchHero } from "@/lib/overwatch-heroes";
 import { GAME_CATALOG, gameConfig, type GameId } from "@/lib/games";
+import { WorldMap } from "@/app/world-map";
 
 type Player = { id: string; name: string; host: boolean };
 type Answer = { code: string; name: string };
@@ -38,6 +39,7 @@ export default function Home() {
   const [playerId, setPlayerId] = useState("");
   const [guesses, setGuesses] = useState<Answer[]>([]);
   const [results, setResults] = useState<Result[]>([]);
+  const [lockedCountryCodes, setLockedCountryCodes] = useState<string[]>([]);
   const [entry, setEntry] = useState("");
   const [left, setLeft] = useState(GAME_CATALOG.countries.durationSeconds);
   const [notice, setNotice] = useState("");
@@ -49,11 +51,11 @@ export default function Home() {
   const sync = useCallback(async (code: string, token: string) => {
     const data = await api<{
       code: string; gameId?: GameId; status: Room["status"]; startedAt: number | null;
-      players: Player[]; playerId: string; myGuesses: Answer[]; results?: Result[];
+      players: Player[]; playerId: string; myGuesses: Answer[]; lockedCountryCodes?: string[]; results?: Result[];
     }>(`/api/room?code=${encodeURIComponent(code)}`, { headers: { Authorization: `Bearer ${token}` } });
     const gameId = data.gameId ?? "countries";
     setRoom({ code: data.code, token, gameId, status: data.status, startedAt: data.startedAt, players: data.players });
-    setSelectedGame(gameId); setPlayers(data.players); setPlayerId(data.playerId); setGuesses(data.myGuesses);
+    setSelectedGame(gameId); setPlayers(data.players); setPlayerId(data.playerId); setGuesses(data.myGuesses); setLockedCountryCodes(data.lockedCountryCodes ?? []);
     if (data.status === "ended") { setResults(data.results ?? []); setStage("results"); }
     else setStage(data.status === "playing" ? "game" : "lobby");
   }, []);
@@ -113,7 +115,7 @@ export default function Home() {
       localStorage.setItem(ROOM_KEY, JSON.stringify(session));
       setJoinCode(data.code);
       const nextRoom: Room = { code: data.code, token: data.token, gameId, status: data.status, startedAt: data.startedAt, players: data.players };
-      setRoom(nextRoom); setSelectedGame(gameId); setPlayers(data.players); setPlayerId(data.playerId); setGuesses([]); setResults([]);
+      setRoom(nextRoom); setSelectedGame(gameId); setPlayers(data.players); setPlayerId(data.playerId); setGuesses([]); setResults([]); setLockedCountryCodes([]);
       setStage(data.status === "playing" ? "game" : "lobby");
     } catch (error) { setNotice(errorText(error)); }
     finally { busyRef.current = false; setBusy(false); }
@@ -163,6 +165,7 @@ export default function Home() {
         body: JSON.stringify({ code: room.code, token: room.token, answerCode: answer.code })
       });
       setGuesses((current) => current.some((guess) => guess.code === answer.code) ? current : [answer, ...current]);
+      if (room.gameId === "countries") setLockedCountryCodes((current) => current.includes(answer.code) ? current : [...current, answer.code]);
       setEntry("");
     } catch (error) { setNotice(errorText(error)); }
     finally { setBusy(false); }
@@ -170,7 +173,7 @@ export default function Home() {
 
   function leaveRoom() {
     localStorage.removeItem(ROOM_KEY);
-    setStage("home"); setRoom(null); setPlayers([]); setGuesses([]); setResults([]); setNotice(""); setEntry("");
+    setStage("home"); setRoom(null); setPlayers([]); setGuesses([]); setResults([]); setLockedCountryCodes([]); setNotice(""); setEntry("");
   }
 
   const ready = Boolean(name.trim());
@@ -183,7 +186,7 @@ export default function Home() {
     <section className="content"><div className="eyebrow">✳　BRAN GAME • FRIEND ROOM</div>
     {stage === "home" && <div className="home-grid">
       <div className="hero"><p className="kicker">TWO MINDS OR THREE. YOUR CALL.</p><h1>Pick a game.<br/><em>Call your crew.</em></h1><p className="lede">Choose a quick challenge, make a private room, and see who can name the most before time runs out.</p>
-        <div className="rules"><p><b>01</b> Choose a game from the lobby.</p><p><b>02</b> Invite one or two friends with your room code.</p><p><b>03</b> Everyone’s answers stay secret until the round ends.</p></div></div>
+        <div className="rules"><p><b>01</b> Choose a game from the lobby.</p><p><b>02</b> Invite one or two friends with your room code.</p><p><b>03</b> First to name an answer claims it for the round.</p></div></div>
       <div className="card"><div className="card-title">CHOOSE A GAME <span>2–3 PLAYERS</span></div>
         <div className="game-picker" role="group" aria-label="Choose a game">
           {(Object.values(GAME_CATALOG)).map((option) => <button type="button" className={`game-option${selectedGame === option.id ? " selected" : ""}`} key={option.id} aria-pressed={selectedGame === option.id} onClick={() => setSelectedGame(option.id)}>
@@ -193,18 +196,19 @@ export default function Home() {
         <label htmlFor="name">DISPLAY NAME</label><input id="name" className="field" maxLength={18} placeholder="What should we call you?" value={name} onChange={(event) => setName(event.target.value)}/>
         <button className="primary" disabled={!ready || busy} onClick={(event) => void startRoom(event as unknown as FormEvent, "create")}>Create {activeGame.title} room <span>↗</span></button>
         <div className="or">OR JOIN A FRIEND</div><form onSubmit={(event) => void startRoom(event, "join")}><label htmlFor="room">ROOM CODE</label><div className="join-row"><input id="room" className="field code" maxLength={6} placeholder="ABC123" value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())}/><button className="join" disabled={!ready || joinCode.trim().length !== 6 || busy}>Join</button></div></form>
-        {notice && <p className="notice">{notice}</p>}<p className="privacy">◉ Your answers stay private until reveal.</p></div>
+        {notice && <p className="notice">{notice}</p>}<p className="privacy">◉ First claim wins. Owners stay hidden until reveal.</p></div>
     </div>}
-    {stage === "lobby" && room && <div className="panel"><p className="kicker">{activeGame.title.toUpperCase()} • ROOM READY</p><h1>Bring the<br/><em>whole crew.</em></h1><p className="lede">{activeGame.rules} Share this code. Start with two players, or wait for a third.</p><button className="room-code" onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}　⧉</button>
+    {stage === "lobby" && room && <div className="panel"><p className="kicker">{activeGame.title.toUpperCase()} • ROOM READY</p><h1>Bring the<br/><em>whole crew.</em></h1><p className="lede">{activeGame.rules} First to name each answer claims it. Share this code. Start with two players, or wait for a third.</p><button className="room-code" onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}　⧉</button>
       <div className="roster">{[0,1,2].map((index) => { const player = players[index]; return <div className="player" key={index}><span>0{index + 1}</span><b>{player?.name ?? "Waiting for player…"}</b><small>{player ? "IN ROOM" : "OPEN SEAT"}</small></div>; })}</div>
       {players.length === 1 ? <p className="waiting">◉　One more player is needed to start.</p> : players.length === 2 ? <p className="waiting">◉　Two players are ready. Start now or wait for a third.</p> : <p className="waiting">◉　All three seats are ready.</p>}
       {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length < 2 || busy} onClick={() => void startRound()}>{players.length < 2 ? "Waiting for one more player" : "Start round ↗"}</button>}
       <button className="quiet" onClick={leaveRoom}>Leave room</button>{notice && <p className="notice">{notice}</p>}</div>}
-    {stage === "game" && room && <div className="game"><section><div className="game-head"><div><p className="kicker">{activeGame.title.toUpperCase()}　<span className="live">● LIVE</span></p><h1>{isChampions ? <>Name every<br/><em>champion.</em></> : isOverwatch ? <>Name every<br/><em>hero.</em></> : <>Name every<br/><em>country.</em></>}</h1></div><div className={left < 30 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div><p className="lede">Type an answer and press enter. Only your list is visible.</p>
-      <form className="guess-form" onSubmit={submitGuess}><input ref={input} className="field" placeholder={activeGame.inputPlaceholder} value={entry} onChange={(event) => setEntry(event.target.value)} disabled={left <= 0 || busy}/><button className="primary" disabled={!entry.trim() || left <= 0 || busy}>Add ↵</button></form>
+    {stage === "game" && room && <div className="game"><section><div className="game-head"><div><p className="kicker">{activeGame.title.toUpperCase()}　<span className="live">● LIVE</span></p><h1>{isChampions ? <>Name every<br/><em>champion.</em></> : isOverwatch ? <>Name every<br/><em>hero.</em></> : <>Name every<br/><em>country.</em></>}</h1></div><div className={left < 30 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div><p className="lede">Type an answer and press enter. First to name it locks it for the round.</p>
+      <form className="guess-form" onSubmit={submitGuess}><input ref={input} className="field" placeholder={activeGame.inputPlaceholder} value={entry} onChange={(event) => setEntry(event.target.value)} disabled={left <= 0 || busy}/><button className="primary" disabled={!entry.trim() || left <= 0 || busy}>Claim ↵</button></form>
       {notice && <p className="notice">{notice}</p>}<div className="guess-title">YOUR ANSWERS　<b>{guesses.length}</b><span>HIDDEN FROM OTHERS</span></div>
-      <div className="guess-list">{guesses.length ? guesses.map((guess, index) => <div className="guess" key={guess.code}><small>{String(guesses.length - index).padStart(2,"0")}</small>{guess.name}<b>✓</b></div>) : <p className="empty">Your first answer is waiting here.<br/>The other players can’t see this list.</p>}</div></section>
-      <aside><div className="aside-title">THE ROOM <b>{players.length}/3</b></div>{players.map((player) => <div className="mini" key={player.id}><span>{player.name.slice(0,1).toUpperCase()}</span><b>{player.name}{player.id === playerId ? " (you)" : ""}</b><i>◉</i></div>)}<p className="aside-note">✳ Answers stay under wraps until the timer hits zero. No peeking, no copying.</p>{players.find((player) => player.id === playerId)?.host && <button className="quiet end-round" disabled={busy} onClick={() => void endRound()}>End round &amp; reveal</button>}{notice && <p className="notice">{notice}</p>}</aside></div>}
+      <div className="guess-list">{guesses.length ? guesses.map((guess, index) => <div className="guess" key={guess.code}><small>{String(guesses.length - index).padStart(2,"0")}</small>{guess.name}<b>✓</b></div>) : <p className="empty">Your first answer is waiting here.<br/>The other players can’t see this list.</p>}</div>
+      {room.gameId === "countries" && <WorldMap lockedCodes={lockedCountryCodes}/>}</section>
+      <aside><div className="aside-title">THE ROOM <b>{players.length}/3</b></div>{players.map((player) => <div className="mini" key={player.id}><span>{player.name.slice(0,1).toUpperCase()}</span><b>{player.name}{player.id === playerId ? " (you)" : ""}</b><i>◉</i></div>)}<p className="aside-note">✳ First to name an answer locks it. You can’t see who claimed a lock until results.</p>{players.find((player) => player.id === playerId)?.host && <button className="quiet end-round" disabled={busy} onClick={() => void endRound()}>End round &amp; reveal</button>}{notice && <p className="notice">{notice}</p>}</aside></div>}
     {stage === "results" && room && <div className="panel results"><p className="kicker">ROUND OVER • ANSWERS REVEALED</p><h1>What a<br/> <em>showing.</em></h1><p className="lede">{players.length} players. Here’s how your lists compare.</p><div className="board">{sortedResults.map((result, index) => <article key={result.playerId}><small>{["1ST","2ND","3RD"][index]}</small><b>{result.name}{result.playerId === playerId ? " · YOU" : ""}</b><strong>{result.guesses.length}<small>{activeGame.answerLabel}</small></strong><div className="chips">{result.guesses.map((guess) => <span key={guess.code}>{guess.name}</span>)}</div></article>)}</div><button className="primary" onClick={leaveRoom}>Back to game lobby ↗</button></div>}
     <footer><span>BRAN GAME / FRIEND ROOM</span><span>MADE FOR FRIENDS, PLAYED FAIR</span><span>© 2026</span></footer></section>
   </main>;
