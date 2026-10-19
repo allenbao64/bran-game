@@ -5,7 +5,7 @@ import type { Redis } from "@upstash/redis";
 import { POST as roomPost, GET as roomGet } from "@/app/api/room/route";
 import { POST as guessPost } from "@/app/api/guess/route";
 import { setRedisForTests } from "@/lib/redis";
-import { setTurnRngForTests, commitTurnRoom, loadTurnRoom } from "@/lib/turn-room";
+import { setTurnRngForTests, commitTurnRoom, loadTurnRoom, applyClaim, initialTurnState, type TurnRoom } from "@/lib/turn-room";
 import { allCodes, cardFits, fittingCodes, type Card } from "@/lib/turn-rules";
 import { MemoryRedis } from "./memory-redis";
 
@@ -36,8 +36,8 @@ const claim = (session: Session, code: string) => guessPost(new NextRequest("htt
 }));
 const pass = (session: Session) => postRoom({ action: "pass", code: session.code, token: session.token, name: "x" });
 
-async function turnsGame(players = 2, mode: "turns" | "live" = "turns") {
-  const host = await json(await postRoom({ action: "create", name: "Host", mode })) as Session;
+async function turnsGame(players = 2, mode: "turns" | "live" = "turns", extra: Record<string, unknown> = {}) {
+  const host = await json(await postRoom({ action: "create", name: "Host", mode, ...extra })) as Session;
   const sessions = [host];
   for (const name of ["Brian", "Casey"].slice(0, players - 1)) sessions.push(await json(await postRoom({ action: "join", code: host.code, name })) as Session);
   const started = await postRoom({ action: "start", code: host.code, token: host.token, name: "Host" });
@@ -249,4 +249,79 @@ test("live rooms are untouched: no turn state, any player can claim, pass is ref
   assert.equal((await claim(host, "US")).status, 200);
   assert.equal((await pass(host)).status, 409);
   assert.equal((await getRoom(host)).status, "playing");
+});
+
+test("naming a taken country says it is taken even when it also fails the card", () => {
+  const room: TurnRoom = {
+    code: "ABC234", status: "playing", startedAt: 0, mode: "turns",
+    players: [{ id: "p1", token: "t1", name: "Host", host: true }, { id: "p2", token: "t2", name: "Brian", host: false }],
+    turn: { ...initialTurnState(["p1", "p2"], 0), card: { kind: "continent", region: "Oceania" } },
+    claims: [{ code: "FR", playerId: "p2", points: 1, round: 1, turn: 0, at: 0 }]
+  };
+  const stolen = applyClaim(room, "p1", "FR", 1);
+  assert.equal(stolen?.status, 409);
+  assert.match(stolen!.error, /France is already claimed/);
+  room.claims!.push({ code: "DE", playerId: "p1", points: 1, round: 1, turn: 0, at: 0 });
+  assert.match(applyClaim(room, "p1", "DE", 1)!.error, /You already claimed that country/);
+  const misfit = applyClaim(room, "p1", "ES", 1);
+  assert.equal(misfit?.status, 400);
+  assert.match(misfit!.error, /doesn't fit this card/);
+});
+
+test("the host's turn speed is validated, stored, shared with joiners and shown in every snapshot", async () => {
+  const blitz = await json(await postRoom({ action: "create", name: "Host", mode: "turns", turnSeconds: 10 })) as Session & { turnSeconds: number };
+  assert.equal(blitz.turnSeconds, 10);
+  assert.equal(((await store.get<Record<string, unknown>>(`bran:room:${blitz.code}`))!).turnSeconds, 10);
+  assert.equal((await json(await postRoom({ action: "join", code: blitz.code, name: "Brian" }))).turnSeconds, 10);
+  assert.equal((await getRoom(blitz)).turnSeconds, 10, "the waiting-room snapshot carries the speed");
+  const started = await json(await postRoom({ action: "start", code: blitz.code, token: blitz.token, name: "Host" }));
+  assert.equal(started.turnSeconds, 10);
+  const view = await getRoom(blitz);
+  assert.equal(view.turnSeconds, 10);
+  assert.equal(view.turn.turnMs, 10_000);
+
+  assert.equal((await json(await postRoom({ action: "create", name: "Host", mode: "turns" }))).turnSeconds, 15, "standard is the default");
+  for (const bad of [20, 0, -5, "15", 15.5, null, true]) {
+    assert.equal((await postRoom({ action: "create", name: "Host", mode: "turns", turnSeconds: bad })).status, 400, `rejects ${JSON.stringify(bad)}`);
+  }
+  // Live rooms and other games ignore a valid speed.
+  const live = await json(await postRoom({ action: "create", name: "Host", mode: "live", turnSeconds: 25 }));
+  assert.equal("turnSeconds" in live, false);
+  assert.equal(((await store.get<Record<string, unknown>>(`bran:room:${live.code}`))!).turnSeconds, undefined);
+  const other = await json(await postRoom({ action: "create", name: "Host", mode: "turns", gameId: "champions", turnSeconds: 25 }));
+  assert.equal("turnSeconds" in other, false);
+});
+
+test("timeouts follow the chosen speed: Blitz 10s and Relaxed 25s", async () => {
+  const blitz = await turnsGame(2, "turns", { turnSeconds: 10 });
+  clock += 9_999;
+  assert.equal((await getRoom(blitz[0])).turn.currentPlayerId, blitz[0].playerId, "10 seconds have not passed yet");
+  clock += 1;
+  const view = await getRoom(blitz[0]);
+  assert.equal(view.turn.currentPlayerId, blitz[1].playerId);
+  assert.equal(view.turn.startedAt, 1_800_000_000_000 + 10_000);
+  clock += 10_000 * 23 - 1;
+  assert.equal((await getRoom(blitz[0])).status, "playing");
+  clock += 1;
+  assert.equal((await getRoom(blitz[0])).status, "ended", "24 turns of 10s end the game");
+
+  clock = 1_800_000_000_000;
+  const relaxed = await turnsGame(2, "turns", { turnSeconds: 25 });
+  clock += 24_999;
+  assert.equal((await getRoom(relaxed[0])).turn.number, 0);
+  clock += 1;
+  assert.equal((await getRoom(relaxed[0])).turn.number, 1);
+  assert.equal((await getRoom(relaxed[0])).turn.turnMs, 25_000);
+});
+
+test("the snapshot outlines each player's largest connected group", async () => {
+  const [host, guest] = await turnsGame();
+  const key = `bran:room:${host.code}`;
+  const room = (await loadTurnRoom(store as unknown as Redis, key))!;
+  const claimOf = (code: string, playerId: string) => ({ code, playerId, points: 1, round: 1, turn: 0, at: clock });
+  room.claims = [claimOf("FR", host.playerId), claimOf("DE", host.playerId), claimOf("BE", host.playerId), claimOf("JP", host.playerId), claimOf("ES", guest.playerId)];
+  assert.equal(await commitTurnRoom(store as unknown as Redis, key, 0, room), true);
+  const view = await getRoom(guest);
+  assert.deepEqual(view.largestGroups[host.playerId], ["BE", "DE", "FR"]);
+  assert.deepEqual(view.largestGroups[guest.playerId], ["ES"]);
 });

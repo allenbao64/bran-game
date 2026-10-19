@@ -98,3 +98,44 @@ test("a live-mode create sends mode live, and non-country games send no mode", a
   assert.equal(sent[1].gameId, "champions");
   assert.equal("mode" in sent[1], false);
 });
+
+test("the turn speed picker only shows for Turn-based, defaults to Standard, and its choice is sent and shown in the lobby", async () => {
+  mount();
+  assert.equal(doc.querySelectorAll(".speed-option").length, 0, "live race has no speed");
+  act(() => button("Turn-based", ".mode-option")!.click());
+  assert.equal(doc.querySelectorAll(".speed-option").length, 3);
+  assert.equal(button("Standard", ".speed-option")!.getAttribute("aria-pressed"), "true");
+  assert.match(button("Blitz", ".speed-option")!.textContent ?? "", /10 SECONDS/);
+  assert.match(button("Relaxed", ".speed-option")!.textContent ?? "", /25 SECONDS/);
+  act(() => button("Blitz", ".speed-option")!.click());
+  assert.equal(button("Blitz", ".speed-option")!.getAttribute("aria-pressed"), "true");
+  assert.equal(button("Standard", ".speed-option")!.getAttribute("aria-pressed"), "false");
+  act(() => button("Live race", ".mode-option")!.click());
+  assert.equal(doc.querySelectorAll(".speed-option").length, 0);
+  act(() => button("Turn-based", ".mode-option")!.click());
+  type("name", "Host");
+  const sent: Record<string, unknown>[] = [];
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({
+      code: "ABC234", gameId: "countries", mode: "turns", turnSeconds: 10, token: "a".repeat(64), playerId: "p1", status: "waiting", startedAt: null,
+      players: [{ id: "p1", name: "Host", host: true }]
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  await act(async () => { button("Create Country Sprint room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.equal(sent[0].turnSeconds, 10, "the earlier Blitz pick is kept");
+  assert.match(doc.body.textContent ?? "", /TURN-BASED · 10S TURNS/);
+  assert.match(doc.body.textContent ?? "", /10 seconds each/);
+});
+
+test("live-mode creates send no turn speed", async () => {
+  mount();
+  type("name", "Host");
+  const sent: Record<string, unknown>[] = [];
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ error: "stop here" }), { status: 400, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  await act(async () => { button("Create Country Sprint room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.equal("turnSeconds" in sent[0], false);
+});

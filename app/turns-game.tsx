@@ -16,11 +16,11 @@ type Props = {
   turn: TurnView; scores: Record<string, ScoreView>; players: TurnPlayer[]; playerId: string;
   countryClaims: Record<string, string>; skewMs: number; entry: string; onEntry: (value: string) => void;
   notice: string; busy: boolean; onSubmit: (event: FormEvent) => void; onPass: () => void;
-  onEnd: () => void; colorOf: (id: string) => string;
+  onEnd: () => void; colorOf: (id: string) => string; largestGroups?: Record<string, string[]>;
 };
 
 /** In-game screen for turn-based Country Sprint: banner, card, input, scoreboard and the shared map. */
-export function TurnsGame({ turn, scores, players, playerId, countryClaims, skewMs, entry, onEntry, notice, busy, onSubmit, onPass, onEnd, colorOf }: Props) {
+export function TurnsGame({ turn, scores, players, playerId, countryClaims, skewMs, entry, onEntry, notice, busy, onSubmit, onPass, onEnd, colorOf, largestGroups }: Props) {
   const [seconds, setSeconds] = useState(Math.ceil(turn.turnMs / 1000));
   const input = useRef<HTMLInputElement>(null);
   const current = players.find((player) => player.id === turn.currentPlayerId);
@@ -37,7 +37,7 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
   useEffect(() => { if (mine) input.current?.focus(); }, [mine, turn.number]);
 
   return <div className="game"><section>
-    <div className="game-head"><div><p className="kicker">COUNTRY SPRINT　<span className="live">● TURN-BASED</span></p><h1>Take your<br/><em>turn.</em></h1></div></div>
+    <div className="game-head"><div><p className="kicker">COUNTRY SPRINT　<span className="live">● TURN-BASED</span>　<span className="speed-tag">{Math.round(turn.turnMs / 1000)}S TURNS</span></p><h1>Take your<br/><em>turn.</em></h1></div></div>
     <div className={mine ? "turn-banner mine" : "turn-banner"} style={{ borderLeftColor: current ? colorOf(current.id) : undefined }}>
       <div><small>{mine ? "YOUR TURN" : "NOW PLAYING"}</small><b>{mine ? "It’s your turn" : `${current?.name ?? "Another player"}’s turn`}</b></div>
       <div className={seconds <= 5 ? "turn-clock urgent" : "turn-clock"} aria-label="Seconds left this turn">{String(seconds).padStart(2, "0")}s</div>
@@ -48,7 +48,7 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
       <input ref={input} className="field" placeholder={mine ? "Name a country that fits the card…" : `Waiting for ${current?.name ?? "the other player"}…`} value={entry} onChange={(event) => onEntry(event.target.value)} disabled={!mine || busy || seconds <= 0}/>
       <button className="primary" disabled={!mine || !entry.trim() || busy || seconds <= 0}>Claim ↵</button>
     </form>
-    <div className="turn-actions"><button type="button" className="quiet" disabled={!mine || busy} onClick={onPass}>Pass</button></div>
+    <div className="turn-actions"><button type="button" className="quiet" disabled={!mine || busy || seconds <= 0} onClick={onPass}>Pass</button></div>
     {notice && <p className="notice">{notice}</p>}
     <div className="scoreboard" aria-label="Scoreboard">{players.map((player) => {
       const score = scores[player.id];
@@ -58,11 +58,11 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
         {score?.bonuses.length ? <small>{score.bonuses.map((bonus) => <span className="bonus-chip" key={bonus.label}>+{bonus.points} {bonus.label}</span>)}</small> : <small>NO BONUSES YET</small>}
       </div>;
     })}</div>
-    <WorldMap claims={countryClaims} players={players} youId={playerId}/>
+    <WorldMap claims={countryClaims} players={players} youId={playerId} emphasis={largestGroups}/>
   </section>
   <aside><div className="aside-title">THE ROOM <b>{players.length}/3</b></div>
     {players.map((player) => <div className="mini" key={player.id}><span style={{ background: colorOf(player.id), color: "#fff" }}>{player.name.slice(0, 1).toUpperCase()}</span><b>{player.name}{player.id === playerId ? " (you)" : ""}</b><i>{scores[player.id]?.total ?? 0}</i></div>)}
-    <p className="aside-note">✳ Small region sets and the largest linked territory are worth +2 each. The last three rounds pay double.</p>
+    <p className="aside-note">✳ Owning a whole small region pays +1 to +4 by size, and the largest linked territory pays +2. Thick outlines on the map mark each player’s largest group. The last three rounds pay double.</p>
     {me?.host && <button className="quiet end-round" disabled={busy} onClick={onEnd}>End game &amp; reveal</button>}
   </aside></div>;
 }

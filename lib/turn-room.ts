@@ -7,7 +7,7 @@ import type { Redis } from "@upstash/redis";
 import { ROOM_TTL_SECONDS } from "@/lib/redis";
 import { countryByCode } from "@/lib/countries";
 import { advanceByTimeouts, createTurnState, currentPlayerId, currentRound, isPlayersTurn, nextTurn, type TurnState } from "@/lib/turns";
-import { cardFits, cardLabel, computeAwards, computeScores, dealCard, isDoubleRound, pointsForRound, unclaimedCodes, allCodes, V2_ROUNDS, type Card, type Claim } from "@/lib/turn-rules";
+import { cardFits, cardLabel, computeAwards, computeScores, dealCard, DEFAULT_TURN_SECONDS, isDoubleRound, largestGroupsByPlayer, pointsForRound, unclaimedCodes, allCodes, V2_ROUNDS, type Card, type Claim } from "@/lib/turn-rules";
 
 export type TurnRoom = {
   code: string;
@@ -16,6 +16,8 @@ export type TurnRoom = {
   status: "waiting" | "playing" | "ended";
   startedAt: number | null;
   players: { id: string; token: string; name: string; host: boolean }[];
+  /** Turn length picked by the host at creation (turn-based rooms only). */
+  turnSeconds?: number;
   turn?: TurnState<Card>;
   claims?: Claim[];
 };
@@ -47,8 +49,8 @@ export function normalizeTurnRoom<T extends TurnRoom>(room: T): T {
   return room;
 }
 
-export function initialTurnState(playerIds: string[], now: number): TurnState<Card> {
-  return createTurnState(playerIds, now, V2_ROUNDS, dealCard(allCodes(), rng));
+export function initialTurnState(playerIds: string[], now: number, turnSeconds = DEFAULT_TURN_SECONDS): TurnState<Card> {
+  return createTurnState(playerIds, now, V2_ROUNDS, dealCard(allCodes(), rng), turnSeconds * 1000);
 }
 
 const dealFor = (room: TurnRoom) => () => dealCard(unclaimedCodes(room.claims ?? []), rng);
@@ -83,11 +85,11 @@ export function applyClaim(room: TurnRoom, playerId: string, code: string, now: 
   if (failure) return failure;
   const country = countryByCode(code);
   if (!country) return { error: "That answer is not on the country list.", status: 400 };
-  const card = room.turn!.card;
-  if (card && !cardFits(card, country.code)) return { error: `${country.name} doesn't fit this card: ${cardLabel(card)}.`, status: 400 };
   const claims = room.claims ?? [];
   const owner = claims.find((claim) => claim.code === country.code);
   if (owner) return { error: owner.playerId === playerId ? "You already claimed that country." : `${country.name} is already claimed.`, status: 409 };
+  const card = room.turn!.card;
+  if (card && !cardFits(card, country.code)) return { error: `${country.name} doesn't fit this card: ${cardLabel(card)}.`, status: 400 };
   const round = currentRound(room.turn!);
   claims.push({ code: country.code, playerId, points: pointsForRound(round, room.turn!.totalRounds), round, turn: room.turn!.number, at: now });
   room.claims = claims;
@@ -163,6 +165,8 @@ export function turnSnapshot(room: TurnRoom, now: number) {
       doubleRound: isDoubleRound(round, turn.totalRounds)
     },
     scores,
+    turnSeconds: Math.round(turn.turnMs / 1000),
+    largestGroups: largestGroupsByPlayer(playerIds, claims),
     claimLog: claims.map((claim, order) => ({ ...claim, order, name: countryByCode(claim.code)?.name ?? claim.code })),
     countryClaims: Object.fromEntries(claims.map((claim) => [claim.code, claim.playerId])),
   };

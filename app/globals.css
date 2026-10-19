@@ -28,3 +28,6 @@ footer{display:flex;justify-content:space-between;border-top:1px solid var(--lin
 .breakdown{margin-top:10px;display:grid;gap:3px;font:500 10px 'DM Mono',monospace;color:#59635d}.breakdown span{display:flex;justify-content:space-between;gap:12px}
 .replay-controls{display:flex;align-items:center;gap:12px;margin:14px 0 4px}.replay-controls .primary{width:auto}.replay-controls small{font:500 10px 'DM Mono',monospace;color:#6b756e}
 .panel.results.turns-results{max-width:900px}
+
+.map-country.territory{stroke-width:2.4;stroke-linejoin:round}
+.speed-picker{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:0 0 20px}.speed-option{border:1px solid #dcded6;border-radius:3px;padding:9px 10px;text-align:left;background:#fbfaf5;color:var(--ink);transition:border .15s,background .15s}.speed-option:hover{border-color:#8aa99a}.speed-option.selected{border-color:var(--green);background:#f0f4e9;box-shadow:0 0 0 2px #17554812}.speed-option b{display:block;font-size:12px}.speed-option small{display:block;margin-top:3px;font:500 9px 'DM Mono',monospace;color:#768079}
