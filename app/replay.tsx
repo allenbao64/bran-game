@@ -29,7 +29,7 @@ export function ResultsReplay({ claimLog, players, youId }: Props) {
   return <div className="replay">
     <div className="replay-controls">
       <button type="button" className="primary" disabled={!claimLog.length} onClick={() => { setStep(0); setPlaying(true); }}>{playing ? "Replaying…" : "▶ Play"}</button>
-      <small>{last ? `CLAIM ${step} OF ${claimLog.length} · ${who} TOOK ${last.name.toUpperCase()} (+${last.points})` : claimLog.length ? "PRESS PLAY TO WATCH THE MAP FILL IN" : "NO CLAIMS WERE MADE"}</small>
+      <small>{last ? `CLAIM ${step} OF ${claimLog.length} · ${who} TOOK ${last.name.toUpperCase()} (+${last.points})` : playing ? "REPLAYING…" : claimLog.length ? "PRESS PLAY TO WATCH THE MAP FILL IN" : "NO CLAIMS WERE MADE"}</small>
     </div>
     <WorldMap claims={claims} players={players} youId={youId} heading="REPLAY"/>
   </div>;

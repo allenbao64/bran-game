@@ -198,9 +198,29 @@ test("turn-based results show each score breakdown, awards and a replay that fil
   assert.equal(doc.querySelectorAll(".map-country.claimed").length > 0, true, "the final map is shown before replaying");
   await act(async () => { play!.click(); });
   assert.equal(doc.querySelectorAll(".map-country.claimed").length, 0, "play restarts from an empty map");
+  assert.match(doc.body.textContent ?? "", /REPLAYING…/, "the first step says it is replaying");
+  assert.doesNotMatch(doc.body.textContent ?? "", /PRESS PLAY/);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
   assert.match(doc.body.textContent ?? "", /CLAIM 1 OF 2/);
   assert.match(doc.body.textContent ?? "", /Brian TOOK FRANCE/);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
   assert.match(doc.body.textContent ?? "", /CLAIM 2 OF 2/);
+});
+
+test("the Pass button locks when the turn clock reaches zero, like the input and Claim button", async () => {
+  const snapshot = () => ({
+    code: "ABC234", gameId: "countries", mode: "turns", status: "playing", startedAt: Date.now(), players: twoPlayers, playerId: "p1", myGuesses: [],
+    countryClaims: { FR: "p1", DE: "p1", ES: "p2" }, lockedCountryCodes: ["FR", "DE", "ES"], largestGroups: { p1: ["FR", "DE"], p2: ["ES"] },
+    turn: { number: 2, round: 2, totalRounds: 12, currentPlayerId: "p1", startedAt: Date.now() - 20_000, turnMs: 10000, serverNow: Date.now(), finished: false, card: { kind: "wild" }, cardLabel: "Wild card: any country", doubleRound: false },
+    scores: {}, claimLog: []
+  });
+  globalThis.fetch = (async () => jsonResponse(snapshot())) as typeof fetch;
+  const doc = mount({ code: "ABC234", token: "a".repeat(64), playerId: "p1", name: "Host" });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)); });
+  const passButton = [...doc.querySelectorAll("button")].find((button) => button.textContent === "Pass")!;
+  assert.match(doc.body.textContent ?? "", /00s/);
+  assert.match(doc.body.textContent ?? "", /10S TURNS/, "the chosen speed shows in game");
+  assert.equal(doc.querySelector<HTMLInputElement>(".guess-form input")!.disabled, true);
+  assert.equal(passButton.disabled, true, "no passing once the clock shows 0");
+  assert.equal(doc.querySelectorAll(".map-country.territory").length > 0, true, "largest groups get a thicker outline");
 });

@@ -10,13 +10,15 @@ import { WorldMap } from "@/app/world-map";
 import { TurnsGame, type ClaimLogEntry, type ScoreView, type TurnView } from "@/app/turns-game";
 import { ResultsReplay } from "@/app/replay";
 import { EmpireGame, EmpireResults, type EmpireAction, type EmpireView } from "@/app/empire-game";
+import { DEFAULT_TURN_SECONDS, TURN_SPEEDS } from "@/lib/turn-rules";
+import { DEFAULT_EMPIRE_TURN_SECONDS, EMPIRE_TURN_SPEEDS } from "@/lib/empire/types";
 
 type Player = { id: string; name: string; host: boolean };
 type Answer = { code: string; name: string };
 type Result = { playerId: string; name: string; guesses: Answer[]; points?: number; bonuses?: { label: string; points: number }[]; bonusTotal?: number; total?: number };
 type Award = { id: string; title: string; playerId: string; detail: string };
 type Mode = "live" | "turns" | "empire";
-type Room = { code: string; token: string; gameId: GameId; mode: Mode; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
+type Room = { code: string; token: string; gameId: GameId; mode: Mode; turnSeconds?: number; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
 type Stage = "home" | "lobby" | "game" | "results";
 const ROOM_KEY = "bran-game-room";
 const BUILD_VERSION = process.env.NEXT_PUBLIC_GAME_VERSION ?? "local";
@@ -31,6 +33,7 @@ function timeText(seconds: number) {
   const n = Math.max(0, seconds);
   return String(Math.floor(n / 60)).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0");
 }
+const turnSecondsOf = (room: { mode?: string; turnSeconds?: number }) => room.turnSeconds ?? (room.mode === "empire" ? DEFAULT_EMPIRE_TURN_SECONDS : DEFAULT_TURN_SECONDS);
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
@@ -39,6 +42,9 @@ export default function Home() {
   const [stage, setStage] = useState<Stage>("home");
   const [selectedGame, setSelectedGame] = useState<GameId>("countries");
   const [selectedMode, setSelectedMode] = useState<Mode>("live");
+  const [selectedSpeed, setSelectedSpeed] = useState<number>(DEFAULT_TURN_SECONDS);
+  const [selectedEmpireSpeed, setSelectedEmpireSpeed] = useState<number>(DEFAULT_EMPIRE_TURN_SECONDS);
+  const [largestGroups, setLargestGroups] = useState<Record<string, string[]>>({});
   const [turn, setTurn] = useState<TurnView | null>(null);
   const [empire, setEmpire] = useState<EmpireView | null>(null);
   const [scores, setScores] = useState<Record<string, ScoreView>>({});
@@ -63,14 +69,14 @@ export default function Home() {
 
   const sync = useCallback(async (code: string, token: string) => {
     const data = await api<{
-      code: string; gameId?: GameId; mode?: Mode; status: Room["status"]; startedAt: number | null;
+      code: string; gameId?: GameId; mode?: Mode; turnSeconds?: number; status: Room["status"]; startedAt: number | null;
       players: Player[]; playerId: string; myGuesses: Answer[]; countryClaims?: Record<string, string>; results?: Result[];
-      turn?: TurnView; empire?: EmpireView | null; scores?: Record<string, ScoreView>; claimLog?: ClaimLogEntry[]; awards?: Award[];
+      turn?: TurnView; largestGroups?: Record<string, string[]>; empire?: EmpireView | null; scores?: Record<string, ScoreView>; claimLog?: ClaimLogEntry[]; awards?: Award[];
     }>(`/api/room?code=${encodeURIComponent(code)}`, { headers: { Authorization: `Bearer ${token}` } });
     const gameId = data.gameId ?? "countries";
     const mode: Mode = data.mode === "turns" || data.mode === "empire" ? data.mode : "live";
-    setRoom({ code: data.code, token, gameId, mode, status: data.status, startedAt: data.startedAt, players: data.players });
-    setSelectedMode(mode);
+    setRoom({ code: data.code, token, gameId, mode, turnSeconds: data.turnSeconds, status: data.status, startedAt: data.startedAt, players: data.players });
+    setSelectedMode(mode); setLargestGroups(data.largestGroups ?? {});
     if (data.turn) { setTurn(data.turn); setSkewMs(data.turn.serverNow - Date.now()); }
     else setTurn(null);
     if (data.empire) { setEmpire(data.empire); setSkewMs(data.empire.serverNow - Date.now()); }
@@ -125,19 +131,19 @@ export default function Home() {
         }
       }
       const data = await api<{
-        code: string; gameId?: GameId; mode?: Mode; token: string; playerId: string; status: Room["status"];
+        code: string; gameId?: GameId; mode?: Mode; turnSeconds?: number; token: string; playerId: string; status: Room["status"];
         startedAt: number | null; players: Player[];
       }>("/api/room", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, name: name.trim(), code, ...(action === "create" ? { gameId: selectedGame, ...(selectedGame === "countries" ? { mode: selectedMode } : {}) } : {}) })
+        body: JSON.stringify({ action, name: name.trim(), code, ...(action === "create" ? { gameId: selectedGame, ...(selectedGame === "countries" ? { mode: selectedMode, ...(selectedMode === "turns" ? { turnSeconds: selectedSpeed } : selectedMode === "empire" ? { turnSeconds: selectedEmpireSpeed } : {}) } : {}) } : {}) })
       });
       const gameId = data.gameId ?? "countries";
       const session = { ...data, name: name.trim() };
       localStorage.setItem(ROOM_KEY, JSON.stringify(session));
       setJoinCode(data.code);
       const mode: Mode = data.mode === "turns" || data.mode === "empire" ? data.mode : "live";
-      const nextRoom: Room = { code: data.code, token: data.token, gameId, mode, status: data.status, startedAt: data.startedAt, players: data.players };
-      setRoom(nextRoom); setSelectedGame(gameId); setSelectedMode(mode); setTurn(null); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setPlayers(data.players); setPlayerId(data.playerId); setGuesses([]); setResults([]); setCountryClaims({});
+      const nextRoom: Room = { code: data.code, token: data.token, gameId, mode, turnSeconds: data.turnSeconds, status: data.status, startedAt: data.startedAt, players: data.players };
+      setRoom(nextRoom); setSelectedGame(gameId); setSelectedMode(mode); setTurn(null); setLargestGroups({}); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setPlayers(data.players); setPlayerId(data.playerId); setGuesses([]); setResults([]); setCountryClaims({});
       setStage(data.status === "playing" ? "game" : "lobby");
     } catch (error) { setNotice(errorText(error)); }
     finally { busyRef.current = false; setBusy(false); }
@@ -225,7 +231,7 @@ export default function Home() {
 
   function leaveRoom() {
     localStorage.removeItem(ROOM_KEY);
-    setStage("home"); setRoom(null); setTurn(null); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setPlayers([]); setGuesses([]); setResults([]); setCountryClaims({}); setNotice(""); setEntry("");
+    setStage("home"); setRoom(null); setTurn(null); setLargestGroups({}); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setPlayers([]); setGuesses([]); setResults([]); setCountryClaims({}); setNotice(""); setEntry("");
   }
 
   const ready = Boolean(name.trim());
@@ -253,20 +259,22 @@ export default function Home() {
         </div>
         {selectedGame === "countries" && <div role="group" aria-label="Choose a mode"><span className="mode-label">MODE</span><div className="mode-picker">
           <button type="button" className={`mode-option${selectedMode === "live" ? " selected" : ""}`} aria-pressed={selectedMode === "live"} onClick={() => setSelectedMode("live")}><b>Live race</b><small>Everyone names countries at once for ten minutes.</small></button>
-          <button type="button" className={`mode-option${selectedMode === "turns" ? " selected" : ""}`} aria-pressed={selectedMode === "turns"} onClick={() => setSelectedMode("turns")}><b>Turn-based</b><small>12 rounds, 15 seconds a turn, a criteria card each time.</small></button>
+          <button type="button" className={`mode-option${selectedMode === "turns" ? " selected" : ""}`} aria-pressed={selectedMode === "turns"} onClick={() => setSelectedMode("turns")}><b>Turn-based</b><small>12 rounds, a criteria card each turn. You pick the speed.</small></button>
           <button type="button" className={`mode-option${selectedMode === "empire" ? " selected" : ""}`} aria-pressed={selectedMode === "empire"} onClick={() => setSelectedMode("empire")}><b>Empire</b><small>Strategy turns: pick a card, claim, steal or fortify. First to 15 points.</small></button>
-        </div></div>}
+        </div>{(selectedMode === "turns" || selectedMode === "empire") && <div role="group" aria-label="Choose a turn speed"><span className="mode-label">TURN SPEED</span><div className="speed-picker">
+          {(selectedMode === "empire" ? EMPIRE_TURN_SPEEDS : TURN_SPEEDS).map((speed) => { const chosen = selectedMode === "empire" ? selectedEmpireSpeed : selectedSpeed; return <button type="button" className={`speed-option${chosen === speed.seconds ? " selected" : ""}`} key={speed.id} aria-pressed={chosen === speed.seconds} onClick={() => selectedMode === "empire" ? setSelectedEmpireSpeed(speed.seconds) : setSelectedSpeed(speed.seconds)}><b>{speed.label}</b><small>{speed.seconds} SECONDS</small></button>; })}
+        </div></div>}</div>}
         <label htmlFor="name">DISPLAY NAME</label><input id="name" className="field" maxLength={18} placeholder="What should we call you?" value={name} onChange={(event) => setName(event.target.value)}/>
         <button className="primary" disabled={!ready || busy} onClick={(event) => void startRoom(event as unknown as FormEvent, "create")}>Create {activeGame.title} room <span>↗</span></button>
         <div className="or">OR JOIN A FRIEND</div><form onSubmit={(event) => void startRoom(event, "join")}><label htmlFor="room">ROOM CODE</label><div className="join-row"><input id="room" className="field code" maxLength={6} placeholder="ABC123" value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())}/><button className="join" disabled={!ready || joinCode.trim().length !== 6 || busy}>Join</button></div></form>
         {notice && <p className="notice">{notice}</p>}<p className="privacy">◉ First claim wins. In countries, every claim shows in its player’s colour.</p></div>
     </div>}
-    {stage === "lobby" && room && <div className="panel"><p className="kicker">{activeGame.title.toUpperCase()} • ROOM READY</p><h1>Bring the<br/><em>whole crew.</em></h1>{isCountries && <p className="mode-tag">MODE　/　{modeLabel(room.mode).toUpperCase()}</p>}<p className="lede">{isEmpire ? "Everyone starts with a capital. On your turn pick a card, then claim, steal or fortify within 20 seconds. Region sets, majorities and the largest empire score bonuses. First to 15 points wins." : isTurns ? "Take turns in join order: 15 seconds each, one criteria card per turn, 12 rounds. Claim a country that fits your card." : <>{activeGame.rules} First to name each answer claims it.</>} Share this code. Start with two players, or wait for a third.</p><button className="room-code" onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}　⧉</button>
+    {stage === "lobby" && room && <div className="panel"><p className="kicker">{activeGame.title.toUpperCase()} • ROOM READY</p><h1>Bring the<br/><em>whole crew.</em></h1>{isCountries && <p className="mode-tag">MODE　/　{modeLabel(room.mode).toUpperCase()}{room.mode !== "live" && ` · ${turnSecondsOf(room)}S TURNS`}</p>}<p className="lede">{isEmpire ? `Everyone starts with a capital. On your turn pick a card, then claim, steal or fortify within ${turnSecondsOf(room)} seconds. Region sets, majorities and the largest empire score bonuses. First to 15 points wins.` : isTurns ? `Take turns in join order: ${turnSecondsOf(room)} seconds each, one criteria card per turn, 12 rounds. Claim a country that fits your card.` : <>{activeGame.rules} First to name each answer claims it.</>} Share this code. Start with two players, or wait for a third.</p><button className="room-code" onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}　⧉</button>
       <div className="roster">{[0,1,2].map((index) => { const player = players[index]; return <div className="player" key={index}><span>0{index + 1}</span>{player && <i className="player-dot" style={{ background: colorOf(player.id) }}/>}<b>{player?.name ?? "Waiting for player…"}</b><small>{player ? "IN ROOM" : "OPEN SEAT"}</small></div>; })}</div>
       {players.length === 1 ? <p className="waiting">◉　One more player is needed to start.</p> : players.length === 2 ? <p className="waiting">◉　Two players are ready. Start now or wait for a third.</p> : <p className="waiting">◉　All three seats are ready.</p>}
       {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length < 2 || busy} onClick={() => void startRound()}>{players.length < 2 ? "Waiting for one more player" : "Start round ↗"}</button>}
       <button className="quiet" onClick={leaveRoom}>Leave room</button>{notice && <p className="notice">{notice}</p>}</div>}
-    {stage === "game" && room && isTurns && turn && <TurnsGame turn={turn} scores={scores} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} entry={entry} onEntry={setEntry} notice={notice} busy={busy} onSubmit={submitGuess} onPass={() => void passTurn()} onEnd={() => void endRound()} colorOf={colorOf}/>}
+    {stage === "game" && room && isTurns && turn && <TurnsGame turn={turn} scores={scores} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} entry={entry} onEntry={setEntry} notice={notice} busy={busy} onSubmit={submitGuess} onPass={() => void passTurn()} onEnd={() => void endRound()} colorOf={colorOf} largestGroups={largestGroups}/>}
     {stage === "game" && room && isTurns && !turn && <p className="lede">Dealing the first card…</p>}
     {stage === "game" && room && isEmpire && empire && <EmpireGame view={empire} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} notice={notice} busy={busy} onAction={empireAction} onNotice={setNotice} onEnd={() => void endRound()} colorOf={colorOf}/>}
     {stage === "game" && room && isEmpire && !empire && <p className="lede">Placing capitals…</p>}

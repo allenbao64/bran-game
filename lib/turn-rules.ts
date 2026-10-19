@@ -6,7 +6,18 @@ export const DOUBLE_POINT_ROUNDS = 3;
 export const MIN_FITTING_COUNTRIES = 3;
 export const SMALL_REGION_MAX = 6;
 export const BONUS_POINTS = 2;
+export const MAX_REGION_BONUS = 4;
+/** Region bonus scales with size: 2 countries +1, 3 +2, 4 +3, 5 or 6 +4. */
+export const regionBonusPoints = (size: number) => Math.max(0, Math.min(size - 1, MAX_REGION_BONUS));
 export const MIN_TERRITORY = 3;
+/** Host-selectable turn lengths in seconds (Blitz, Standard, Relaxed). */
+export const TURN_SPEEDS = [
+  { id: "blitz", label: "Blitz", seconds: 10 },
+  { id: "standard", label: "Standard", seconds: 15 },
+  { id: "relaxed", label: "Relaxed", seconds: 25 }
+] as const;
+export const DEFAULT_TURN_SECONDS = 15;
+export const isTurnSeconds = (value: unknown): value is number => TURN_SPEEDS.some((speed) => speed.seconds === value);
 
 export type Card =
   | { kind: "letter"; letter: string }
@@ -60,8 +71,10 @@ function pick<T>(items: T[], rng: () => number): T {
 
 const CARD_KINDS = ["letter", "max", "min", "continent", "landlocked", "border"] as const;
 
-function candidateCard(unclaimed: string[], rng: () => number): Card {
-  if (rng() < 0.1) return { kind: "wild" };
+export const WILD_RATE = 0.1;
+
+/** A random non-wild card, or null if the kind drawn cannot be built (e.g. no neighbours left). */
+function candidateCard(unclaimed: string[], rng: () => number): Card | null {
   const kind = pick([...CARD_KINDS], rng);
   switch (kind) {
     case "letter": return { kind, letter: pick(unclaimed.map((code) => countryFacts(code)!.initial), rng) };
@@ -71,20 +84,21 @@ function candidateCard(unclaimed: string[], rng: () => number): Card {
     case "landlocked": return { kind };
     case "border": {
       const neighbours = [...new Set(unclaimed.flatMap((code) => countryFacts(code)!.borders))];
-      return neighbours.length ? { kind, country: pick(neighbours, rng) } : { kind: "wild" };
+      return neighbours.length ? { kind, country: pick(neighbours, rng) } : null;
     }
   }
 }
 
 /**
- * Deals one card. A non-wild card is only dealt if at least 3 unclaimed countries
- * fit it; otherwise we draw again, and finally fall back to wild.
+ * Deals one card. Wild is an intentional 10% draw, rolled once. Otherwise a card
+ * is only dealt if at least 3 unclaimed countries fit it; we redraw up to 40 times
+ * and fall back to wild only when no other card could be dealt.
  */
 export function dealCard(unclaimed: string[], rng: () => number = Math.random): Card {
-  if (unclaimed.length === 0) return { kind: "wild" };
+  if (unclaimed.length === 0 || rng() < WILD_RATE) return { kind: "wild" };
   for (let attempt = 0; attempt < 40; attempt++) {
     const card = candidateCard(unclaimed, rng);
-    if (fittingCodes(card, unclaimed).length >= MIN_FITTING_COUNTRIES) return card;
+    if (card && fittingCodes(card, unclaimed).length >= MIN_FITTING_COUNTRIES) return card;
   }
   return { kind: "wild" };
 }
@@ -111,26 +125,33 @@ export function smallRegions(): { name: string; codes: string[] }[] {
     .map(([name, codes]) => ({ name, codes })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Size of the biggest group of one owner's countries connected by land borders. */
-export function largestConnectedGroup(codes: string[]): number {
+/** The biggest group of one owner's countries connected by land borders (ties: the group found first, in claim order). */
+export function largestConnectedGroupCodes(codes: string[]): string[] {
   const owned = new Set(codes);
   const seen = new Set<string>();
-  let best = 0;
+  let best: string[] = [];
   for (const start of owned) {
     if (seen.has(start)) continue;
-    let size = 0;
+    const group: string[] = [];
     const stack = [start];
     seen.add(start);
     while (stack.length) {
       const code = stack.pop()!;
-      size++;
+      group.push(code);
       for (const next of countryFacts(code)?.borders ?? []) {
         if (owned.has(next) && !seen.has(next)) { seen.add(next); stack.push(next); }
       }
     }
-    best = Math.max(best, size);
+    if (group.length > best.length) best = group;
   }
   return best;
+}
+/** Size of the biggest group of one owner's countries connected by land borders. */
+export const largestConnectedGroup = (codes: string[]) => largestConnectedGroupCodes(codes).length;
+
+/** Each player's largest connected group (the one the territory bonus is measured on), for the map outline. */
+export function largestGroupsByPlayer(playerIds: string[], claims: Pick<Claim, "code" | "playerId">[]): Record<string, string[]> {
+  return Object.fromEntries(playerIds.map((id) => [id, largestConnectedGroupCodes(claims.filter((claim) => claim.playerId === id).map((claim) => claim.code)).sort()]));
 }
 
 /** Bonuses for owning every country of a small region. */
@@ -140,7 +161,7 @@ export function regionBonuses(claims: Pick<Claim, "code" | "playerId">[]): Recor
   for (const region of smallRegions()) {
     const owners = new Set(region.codes.map((code) => owner.get(code)));
     const only = owners.size === 1 ? [...owners][0] : undefined;
-    if (only) (result[only] ??= []).push({ kind: "region", label: `Owns all of ${region.name}`, points: BONUS_POINTS });
+    if (only && regionBonusPoints(region.codes.length) > 0) (result[only] ??= []).push({ kind: "region", label: `Owns all of ${region.name}`, points: regionBonusPoints(region.codes.length) });
   }
   return result;
 }

@@ -12,7 +12,7 @@ export type EmpireScore = {
 };
 export type EmpireView = {
   round: number; roundCap: number; winPoints: number; currentPlayerId: string | null;
-  turnStartedAt: number; turnMs: number; serverNow: number;
+  turnStartedAt: number; turnMs: number; serverNow: number; largestGroups?: Record<string, string[]>;
   event: { kind: string; continent?: string; label: string } | null; nextEventAfterRound: number;
   hand: { kind: string; label: string }[]; chosen: number | null;
   players: { id: string; capital: string; capitalName: string; stealTokens: number; forts: string[]; fortNames: string[] }[];
@@ -83,7 +83,7 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
   return <div className="game empire">
     <section>
       <div className="game-head"><div>
-        <p className="kicker">EMPIRE　<span className="live">● ROUND {view.round} OF {view.roundCap}</span>　FIRST TO {view.winPoints}</p>
+        <p className="kicker">EMPIRE　<span className="live">● ROUND {view.round} OF {view.roundCap}</span>　FIRST TO {view.winPoints}　<span className="speed-tag">{Math.round(view.turnMs / 1000)}S TURNS</span></p>
         <h1>{mine ? <>Your<br/><em>move.</em></> : <>{nameOf(view.currentPlayerId ?? undefined)}’s<br/><em>move.</em></>}</h1>
       </div><div className={seconds <= 5 ? "timer urgent" : "timer"}><small>TURN</small><b>0:{String(seconds).padStart(2, "0")}</b></div></div>
       {view.event ? <p className="empire-event">EVENT THIS ROUND · {view.event.label}</p>
@@ -105,7 +105,7 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
         <p className="empire-hint">{!picked ? "Pick a card, then name a country that fits it." : owner && owner !== playerId ? `${resolved?.name} belongs to ${nameOf(owner)}. Name its capital to steal it (${me?.stealTokens ?? 0} steal${me?.stealTokens === 1 ? "" : "s"} left).` : "Name a free country that fits your card. Type one of yours to fortify it."}</p>
       </form>}
       {notice && <p className="notice">{notice}</p>}
-      <WorldMap claims={countryClaims} players={players} youId={playerId}/>
+      <WorldMap claims={countryClaims} players={players} youId={playerId} emphasis={view.largestGroups}/>
     </section>
     <aside>
       <div className="aside-title">SCORES <b>{view.winPoints} TO WIN</b></div>

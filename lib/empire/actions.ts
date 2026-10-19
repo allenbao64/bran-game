@@ -144,7 +144,7 @@ function endTurn(state: EmpireState, now: number, deps: EmpireDeps): EmpireState
   return { ...next, hand: dealTo(next, scores, deps) };
 }
 
-function initEmpire(playerIds: string[], now: number, deps: EmpireDeps): EmpireState {
+function initEmpire(playerIds: string[], now: number, deps: EmpireDeps, turnMs?: number): EmpireState {
   // Fisher-Yates shuffle of the seat order using the injected rng.
   const order = [...playerIds];
   for (let i = order.length - 1; i > 0; i -= 1) {
@@ -168,6 +168,7 @@ function initEmpire(playerIds: string[], now: number, deps: EmpireDeps): EmpireS
     round: 1,
     seat: 0,
     turnStartedAt: now,
+    ...(turnMs ? { turnMs } : {}),
     empireHolder: null,
     event: null,
     hand: [],
@@ -316,8 +317,9 @@ function applyAction(
 function advanceTimeouts(state: EmpireState, now: number, deps: EmpireDeps): EmpireState {
   let current = state;
   let changed = false;
-  while (!current.finished && now >= current.turnStartedAt + EMPIRE_RULES.turnMs) {
-    const expiredAt = current.turnStartedAt + EMPIRE_RULES.turnMs;
+  const turnMs = state.turnMs ?? EMPIRE_RULES.turnMs;
+  while (!current.finished && now >= current.turnStartedAt + turnMs) {
+    const expiredAt = current.turnStartedAt + turnMs;
     const result = applyAction(current, current.players[current.seat].id, { type: "pass" }, expiredAt, deps);
     if ("error" in result) break;
     current = result;

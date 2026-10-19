@@ -56,7 +56,7 @@ export function nextTurn<Card>(state: TurnState<Card>, now: number, card: Card |
 }
 
 /**
- * Lazily applies timeouts: every fully expired 15-second turn counts as a pass.
+ * Lazily applies timeouts: every fully expired turn counts as a pass.
  * `deal` is called once, for the turn that is current after advancing.
  */
 export function advanceByTimeouts<Card>(

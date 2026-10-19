@@ -5,6 +5,7 @@ type StoredRoom = {
   createdAt: number;
   startedAt: number | null;
   mode?: string;
+  turnSeconds?: number;
   turn?: { number: number; order: string[] };
   claims?: unknown[];
   players: { id: string; token: string; name: string; host: boolean }[];
@@ -118,7 +119,7 @@ export class MemoryRedis {
       room.players.push({ id: args[0], token: args[1], name: args[2], host: false });
       await this.set(key, room);
       return {
-        ok: true, gameId: room.gameId ?? "countries", mode: room.mode ?? "live", status: room.status, startedAt: room.startedAt,
+        ok: true, gameId: room.gameId ?? "countries", mode: room.mode ?? "live", turnSeconds: room.turnSeconds, status: room.status, startedAt: room.startedAt,
         players: room.players.map(({ id, name, host }) => ({ id, name, host }))
       };
     }

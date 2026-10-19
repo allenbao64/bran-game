@@ -8,7 +8,7 @@ import { ROOM_TTL_SECONDS } from "@/lib/redis";
 import { countryByCode } from "@/lib/countries";
 import { geo } from "@/lib/empire/geo";
 import { cards } from "@/lib/empire/cards";
-import { scoring } from "@/lib/empire/scoring";
+import { scoring, largestEmpireGroups } from "@/lib/empire/scoring";
 import { actions } from "@/lib/empire/actions";
 import { EMPIRE_RULES, type ActionError, type EmpireAction, type EmpireDeps, type EmpireState } from "@/lib/empire/types";
 
@@ -19,6 +19,8 @@ export type EmpireRoom = {
   status: "waiting" | "playing" | "ended";
   startedAt: number | null;
   players: { id: string; token: string; name: string; host: boolean }[];
+  /** Turn length in seconds picked by the host at creation (15, 20 or 30). */
+  turnSeconds?: number;
   empire?: EmpireState;
   empireVersion?: number;
 };
@@ -58,7 +60,7 @@ function syncEmpire(room: EmpireRoom, now: number) {
   if (room.status !== "playing") return false;
   let changed = false;
   if (!room.empire) {
-    room.empire = actions.initEmpire(room.players.map((player) => player.id), room.startedAt ?? now, deps());
+    room.empire = actions.initEmpire(room.players.map((player) => player.id), room.startedAt ?? now, deps(), room.turnSeconds ? room.turnSeconds * 1000 : undefined);
     changed = true;
   }
   const advanced = actions.advanceTimeouts(room.empire, now, deps());
@@ -136,7 +138,8 @@ export function empireSnapshot(room: EmpireRoom, now: number) {
     empire: {
       round: empire.round, roundCap: EMPIRE_RULES.roundCap, winPoints: EMPIRE_RULES.winPoints,
       currentPlayerId: empire.finished ? null : empire.players[empire.seat]?.id ?? null,
-      turnStartedAt: empire.turnStartedAt, turnMs: EMPIRE_RULES.turnMs, serverNow: now,
+      turnStartedAt: empire.turnStartedAt, turnMs: empire.turnMs ?? EMPIRE_RULES.turnMs, serverNow: now,
+      largestGroups: largestEmpireGroups(empire, geo),
       event: empire.event ? { ...empire.event, label: cards.eventLabel(empire.event) } : null,
       nextEventAfterRound: empire.round + roundsUntilEvent - 1,
       hand: empire.hand.map((card) => ({ ...card, label: cards.cardLabel(card) })),

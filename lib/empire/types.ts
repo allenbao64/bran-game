@@ -32,6 +32,15 @@ export const EMPIRE_RULES = {
 /** Region set bonus by region size: 2–4 countries +3, 5–9 +5, 10+ +8. */
 export const setBonus = (regionSize: number) => regionSize <= 4 ? 3 : regionSize <= 9 ? 5 : 8;
 
+/** Host-selectable Empire turn lengths in seconds (Blitz, Standard, Relaxed). Standard matches EMPIRE_RULES.turnMs. */
+export const EMPIRE_TURN_SPEEDS = [
+  { id: "blitz", label: "Blitz", seconds: 15 },
+  { id: "standard", label: "Standard", seconds: 20 },
+  { id: "relaxed", label: "Relaxed", seconds: 30 }
+] as const;
+export const DEFAULT_EMPIRE_TURN_SECONDS = 20;
+export const isEmpireTurnSeconds = (value: unknown): value is number => EMPIRE_TURN_SPEEDS.some((speed) => speed.seconds === value);
+
 export type Rng = () => number;
 
 // ---------- Geography (lib/empire/geo.ts) ----------
@@ -111,6 +120,8 @@ export type EmpireState = {
   /** Index into players of whose turn it is. */
   seat: number;
   turnStartedAt: number;
+  /** Length of each turn in ms; older saved games omit it and use EMPIRE_RULES.turnMs. */
+  turnMs?: number;
   /** Current holder of the largest-empire bonus (keeps it on a tie). */
   empireHolder: string | null;
   /** Event active for the current round, if any. */
@@ -162,9 +173,10 @@ export type EmpireDeps = {
   rng: Rng;
 };
 export type EmpireActions = {
-  initEmpire: (playerIds: string[], now: number, deps: EmpireDeps) => EmpireState;
+  /** `turnMs` overrides EMPIRE_RULES.turnMs for this game (stored on the state). */
+  initEmpire: (playerIds: string[], now: number, deps: EmpireDeps, turnMs?: number) => EmpireState;
   /** Validates and applies one action by `playerId`; never mutates `state`. */
   applyAction: (state: EmpireState, playerId: string, action: EmpireAction, now: number, deps: EmpireDeps) => EmpireState | ActionError;
-  /** Lazily applies turn timeouts (each expired 20 s turn = pass). */
+  /** Lazily applies turn timeouts (each expired turn (state.turnMs, default 20 s) = pass). */
   advanceTimeouts: (state: EmpireState, now: number, deps: EmpireDeps) => EmpireState;
 };

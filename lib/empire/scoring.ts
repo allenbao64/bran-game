@@ -11,18 +11,18 @@ type ScoreState = Pick<EmpireState, "players" | "owners" | "empireHolder" | "log
 type ScoreGeo = Pick<EmpireGeo, "neighbours" | "regionOf" | "regionMembers" | "regionNames">;
 type ProtectGeo = Pick<EmpireGeo, "regionOf" | "regionMembers" | "regionNames">;
 
-/** Size of the largest connected group of `owner`'s countries, linked through geo.neighbours. */
-function largestGroup(owner: string, owners: Record<string, string>, geo: Pick<EmpireGeo, "neighbours">): number {
+/** The largest connected group of `owner`'s countries (land borders and sea routes via geo.neighbours); the first found wins a tie. */
+function largestGroupCodes(owner: string, owners: Record<string, string>, geo: Pick<EmpireGeo, "neighbours">): string[] {
   const seen = new Set<string>();
-  let best = 0;
+  let best: string[] = [];
   for (const start of Object.keys(owners)) {
     if (owners[start] !== owner || seen.has(start)) continue;
-    let size = 0;
+    const group: string[] = [];
     const stack = [start];
     seen.add(start);
     while (stack.length > 0) {
       const code = stack.pop() as string;
-      size++;
+      group.push(code);
       for (const next of geo.neighbours(code)) {
         if (owners[next] === owner && !seen.has(next)) {
           seen.add(next);
@@ -30,9 +30,17 @@ function largestGroup(owner: string, owners: Record<string, string>, geo: Pick<E
         }
       }
     }
-    best = Math.max(best, size);
+    if (group.length > best.length) best = group;
   }
   return best;
+}
+
+/** Size of the largest connected group of `owner`'s countries, linked through geo.neighbours. */
+const largestGroup = (owner: string, owners: Record<string, string>, geo: Pick<EmpireGeo, "neighbours">) => largestGroupCodes(owner, owners, geo).length;
+
+/** Each player's largest connected empire (the group the largest-empire bonus is measured on), as sorted country codes. */
+export function largestEmpireGroups(state: Pick<EmpireState, "players" | "owners">, geo: Pick<EmpireGeo, "neighbours">): Record<string, string[]> {
+  return Object.fromEntries(state.players.map((player) => [player.id, largestGroupCodes(player.id, state.owners, geo).sort()]));
 }
 
 /** Largest-empire holder: strictly biggest qualifier wins; a tie keeps the previous holder only if they are among the tied. */

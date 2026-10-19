@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { allCountryFacts, countryFacts } from "@/lib/countries";
 import {
   allCodes, cardFits, cardLabel, computeAwards, computeScores, dealCard, fittingCodes, isDoubleRound, largestConnectedGroup,
-  pointsForRound, smallRegions, unclaimedCodes, type Card, type Claim
+  pointsForRound, smallRegions, unclaimedCodes, regionBonusPoints, largestConnectedGroupCodes, largestGroupsByPlayer, TURN_SPEEDS, isTurnSeconds, type Card, type Claim
 } from "@/lib/turn-rules";
 
 const claim = (code: string, playerId: string, round = 1, points = 1): Claim => ({ code, playerId, points, round, turn: 0, at: 0 });
@@ -84,13 +84,13 @@ test("small regions are subregions with 6 or fewer game countries", () => {
   assert.ok(total > 10);
 });
 
-test("owning every country in a small region is worth +2, and one missing country ruins it", () => {
+test("owning every country in a small region is worth size - 1 (max 4), and one missing country ruins it", () => {
   const anz = smallRegions().find((region) => region.name === "Australia and New Zealand")!.codes;
   assert.equal(anz.length, 2);
   const full = computeScores(["p1", "p2"], anz.map((code) => claim(code, "p1")));
   assert.equal(full.p1.points, 2);
-  assert.deepEqual(full.p1.bonuses.map((b) => [b.kind, b.points]), [["region", 2]]);
-  assert.equal(full.p1.total, 4);
+  assert.deepEqual(full.p1.bonuses.map((b) => [b.kind, b.points]), [["region", 1]], "a 2-country region pays +1");
+  assert.equal(full.p1.total, 3);
   const split = computeScores(["p1", "p2"], [claim(anz[0], "p1"), claim(anz[1], "p2")]);
   assert.equal(split.p1.bonusTotal + split.p2.bonusTotal, 0);
   const partial = computeScores(["p1", "p2"], [claim(anz[0], "p1")]);
@@ -157,4 +157,72 @@ test("unclaimedCodes removes claimed countries", () => {
   assert.equal(unclaimedCodes([{ code: "FR" }, { code: "DE" }]).length, allCodes().length - 2);
   const card: Card = { kind: "continent", region: "Oceania" };
   assert.ok(fittingCodes(card, allCodes()).includes("AU"));
+});
+
+test("region bonus scales with region size: 2 -> +1, 3 -> +2, 4 -> +3, 5 or 6 -> +4", () => {
+  assert.deepEqual([2, 3, 4, 5, 6].map(regionBonusPoints), [1, 2, 3, 4, 4]);
+  for (const region of smallRegions()) {
+    const expected = Math.min(region.codes.length - 1, 4);
+    const scores = computeScores(["p1", "p2"], region.codes.map((code) => claim(code, "p1")));
+    const bonus = scores.p1.bonuses.find((b) => b.kind === "region" && b.label === `Owns all of ${region.name}`);
+    assert.equal(bonus?.points, expected, `${region.name} (${region.codes.length} countries)`);
+  }
+  const names = Object.fromEntries(smallRegions().map((r) => [r.name, r.codes]));
+  const sizes = Object.fromEntries(Object.entries(names).map(([n, c]) => [n, c.length]));
+  assert.equal(sizes["Australia and New Zealand"], 2);
+  assert.equal(sizes["Polynesia"], 3);
+  assert.equal(sizes["Eastern Europe"], 4);
+  assert.equal(sizes["Central Asia"], 5);
+  assert.equal(sizes["Central Europe"], 6);
+});
+
+test("the largest-territory bonus stays at +2", () => {
+  const scores = computeScores(["p1", "p2"], ["FR", "DE", "BE"].map((c) => claim(c, "p1")));
+  assert.equal(scores.p1.bonuses.find((b) => b.kind === "territory")!.points, 2);
+});
+
+test("wild cards are an intentional ~10% draw on an empty board (seeded, 10,000 draws)", () => {
+  const rng = seeded(12345);
+  const all = allCodes();
+  let wild = 0;
+  for (let i = 0; i < 10_000; i++) if (dealCard(all, rng).kind === "wild") wild++;
+  const rate = wild / 10_000;
+  assert.ok(rate >= 0.07 && rate <= 0.13, `wild rate should be about 10%, got ${(rate * 100).toFixed(2)}%`);
+});
+
+test("late in the game the wild rate stays near 10% because redraws no longer favour wild", () => {
+  const rng = seeded(5);
+  const few = allCodes().filter((_, i) => i % 10 === 0);
+  let wild = 0;
+  for (let i = 0; i < 5_000; i++) if (dealCard(few, rng).kind === "wild") wild++;
+  assert.ok(wild / 5_000 < 0.13, `got ${(wild / 50).toFixed(1)}%`);
+});
+
+test("wild is only a fallback when no other card can be dealt", () => {
+  // Never roll wild (rng always high) but only two countries remain: nothing fits 3, so wild is the fallback.
+  assert.deepEqual(dealCard(["FR", "DE"], () => 0.99), { kind: "wild" });
+  // The same constant rng on a full board always deals a real card, never wild.
+  const card = dealCard(allCodes(), () => 0.5);
+  assert.notEqual(card.kind, "wild");
+  assert.ok(fittingCodes(card, allCodes()).length >= 3);
+  // A low first roll is the intentional wild draw.
+  const rolls = [0.05];
+  assert.deepEqual(dealCard(allCodes(), () => rolls.shift() ?? 0.5), { kind: "wild" });
+});
+
+test("largest connected group codes and the per-player helper", () => {
+  assert.deepEqual(largestConnectedGroupCodes(["FR", "DE", "BE", "NL", "JP"]).sort(), ["BE", "DE", "FR", "NL"]);
+  assert.deepEqual(largestConnectedGroupCodes([]), []);
+  assert.equal(largestConnectedGroupCodes(["FR", "DE", "BE", "NL", "JP"]).length, largestConnectedGroup(["FR", "DE", "BE", "NL", "JP"]));
+  const claims = [...["FR", "DE", "BE", "JP"].map((c) => claim(c, "p1")), ...["ES", "PT"].map((c) => claim(c, "p2"))];
+  const groups = largestGroupsByPlayer(["p1", "p2", "p3"], claims);
+  assert.deepEqual(groups.p1, ["BE", "DE", "FR"], "the island of Japan is not part of the group");
+  assert.deepEqual(groups.p2, ["ES", "PT"]);
+  assert.deepEqual(groups.p3, [], "players with no claims have no group");
+});
+
+test("turn speeds are 10, 15 and 25 seconds", () => {
+  assert.deepEqual(TURN_SPEEDS.map((s) => [s.label, s.seconds]), [["Blitz", 10], ["Standard", 15], ["Relaxed", 25]]);
+  assert.ok(isTurnSeconds(10) && isTurnSeconds(15) && isTurnSeconds(25));
+  assert.ok(!isTurnSeconds(20) && !isTurnSeconds("15") && !isTurnSeconds(undefined));
 });

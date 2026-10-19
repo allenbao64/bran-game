@@ -73,3 +73,19 @@ test("the Empire screen copes with a one-card hand", () => {
   assert.equal((html.match(/empire-card/g) ?? []).length, 1);
   assert.match(html, /Any country/);
 });
+
+test("the Empire screen shows the chosen turn length and outlines each player's largest empire on the map", () => {
+  const r = room();
+  r.empire = { ...r.empire!, turnMs: 30_000, owners: { ...r.empire!.owners, FR: "a", DE: "a", BE: "a" } };
+  const snap = empireSnapshot(r, 2000);
+  const view = snap.empire!;
+  assert.equal(view.turnMs, 30_000);
+  assert.ok(view.largestGroups!.a.length >= 3);
+  const html = renderToStaticMarkup(React.createElement(EmpireGame, {
+    view, players, playerId: "a", countryClaims: snap.countryClaims, skewMs: 0, notice: "",
+    busy: false, onAction: async () => true, onNotice: () => {}, onEnd: () => {}, colorOf
+  }));
+  assert.match(html, /30S TURNS/);
+  assert.match(html, /0:30/, "the clock starts from the chosen length");
+  assert.ok((html.match(/map-country[^"]*territory/g) ?? []).length >= 3, "the largest empire gets the thick outline");
+});
