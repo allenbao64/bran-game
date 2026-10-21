@@ -102,9 +102,20 @@ test("expired turns count as passes and land on the right player and round", asy
   const first = (await getRoom(sessions[0])).empire.currentPlayerId;
   clock += EMPIRE_RULES.turnMs * 3 + 500;
   const view = await getRoom(sessions[0]);
-  assert.notEqual(view.empire.currentPlayerId, first, "three passes in a 2-player game end on the other player");
+  // Snake order: A, B in round 1, then B opens round 2, so after three passes it is A again.
+  assert.equal(view.empire.currentPlayerId, first, "three passes in a 2-player game snake back to the first player");
   assert.equal(view.empire.round, 2);
+  assert.equal(view.empire.log.length, 3);
+  assert.equal(view.empire.log[0].playerId, view.empire.log[1].playerId, "newest first: the last two passes are one player's back-to-back turns");
   assert.ok(view.empire.log.some((entry: { kind: string }) => entry.kind === "pass"));
+});
+
+test("the snapshot exposes round-start standings and no underdog in round 1", async () => {
+  const sessions = await empireGame(3);
+  const view = await getRoom(sessions[0]);
+  assert.equal(view.empire.underdogId, null);
+  assert.deepEqual(Object.values(view.empire.roundStartTotals), [1, 1, 1]);
+  assert.equal(view.empire.hand.length, EMPIRE_RULES.cardsDealt);
 });
 
 test("two simultaneous claims by the current player only count once", async () => {

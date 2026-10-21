@@ -11,6 +11,7 @@ export type EmpireScore = {
   sets: { region: string; points: number }[]; majorities: string[]; total: number;
 };
 export type EmpireView = {
+  underdogId?: string | null; roundStartTotals?: Record<string, number>;
   round: number; roundCap: number; winPoints: number; currentPlayerId: string | null;
   turnStartedAt: number; turnMs: number; serverNow: number; largestGroups?: Record<string, string[]>;
   event: { kind: string; continent?: string; label: string } | null; nextEventAfterRound: number;
@@ -121,7 +122,7 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
       })}
       <div className="aside-title">LATEST</div>
       <div className="empire-log">{view.log.length ? view.log.map((entry, index) => <small key={index}>R{entry.round} · {logLine(entry, nameOf)}</small>) : <small>No moves yet.</small>}</div>
-      <p className="aside-note">✳ Steal only countries that border yours, from players at or above your score. Capitals, forts and full region sets can’t be stolen.</p>
+      <p className="aside-note">✳ Steal only countries that border yours, from players at or above your score at the start of the round. Capitals, forts and full region sets can’t be stolen.</p>
       {host && <button className="quiet end-round" disabled={busy} onClick={onEnd}>End game &amp; reveal</button>}
     </aside>
   </div>;
