@@ -47,14 +47,19 @@ function scoreState(state: EmpireState, deps: EmpireDeps): ScoreResult {
   );
 }
 
-/** The player with the unique lowest total, or null when the lowest total is shared. */
-function strictlyLast(players: EmpirePlayer[], scores: Scores): string | null {
+/**
+ * The underdog: the player with the unique lowest total who is also at least
+ * EMPIRE_RULES.underdogGap points behind the leader, or null.
+ */
+export function underdogOf(players: EmpirePlayer[], totals: Record<string, number>): string | null {
   if (players.length < 2) return null;
   let lowest = Infinity;
+  let highest = -Infinity;
   let lowestId: string | null = null;
   let ties = 0;
   for (const player of players) {
-    const total = totalOf(scores, player.id);
+    const total = totals[player.id] ?? 0;
+    highest = Math.max(highest, total);
     if (total < lowest) {
       lowest = total;
       lowestId = player.id;
@@ -63,13 +68,30 @@ function strictlyLast(players: EmpirePlayer[], scores: Scores): string | null {
       ties += 1;
     }
   }
-  return ties === 1 ? lowestId : null;
+  return ties === 1 && highest - lowest >= EMPIRE_RULES.underdogGap ? lowestId : null;
 }
 
-/** Deals the current player's hand: three cards when strictly last on total, else two. */
-function dealTo(state: EmpireState, scores: Scores, deps: EmpireDeps): EmpireCard[] {
+function totalsOf(scores: Scores, players: EmpirePlayer[]): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const player of players) totals[player.id] = totalOf(scores, player.id);
+  return totals;
+}
+
+/** Seat that opens a round: snake order, so odd rounds start at the first seat and even rounds at the last. */
+function firstSeat(round: number, playerCount: number): number {
+  return round % 2 === 1 ? 0 : playerCount - 1;
+}
+
+/** The seat after `seat` in this round's order, or null when the round is over. */
+function nextSeat(round: number, seat: number, playerCount: number): number | null {
+  const next = round % 2 === 1 ? seat + 1 : seat - 1;
+  return next < 0 || next >= playerCount ? null : next;
+}
+
+/** Deals the current player's hand: the bigger hand only for the round-start underdog. */
+function dealTo(state: EmpireState, deps: EmpireDeps): EmpireCard[] {
   const player = state.players[state.seat];
-  const underdog = strictlyLast(state.players, scores) === player.id;
+  const underdog = underdogOf(state.players, state.roundStartTotals ?? {}) === player.id;
   const unclaimed = Array.from(allCountries(deps)).filter((code) => state.owners[code] === undefined);
   return deps.cards.dealHand(underdog ? EMPIRE_RULES.underdogCards : EMPIRE_RULES.cardsDealt, {
     ownedByMe: ownedBy(state.owners, player.id),
@@ -107,17 +129,21 @@ function endTurn(state: EmpireState, now: number, deps: EmpireDeps): EmpireState
   }
 
   let players = base.players;
-  let seat = base.seat + 1;
+  const following = nextSeat(base.round, base.seat, players.length);
+  let seat = following ?? base.seat;
   let round = base.round;
   let event = base.event;
+  let roundStartTotals = base.roundStartTotals;
 
-  if (seat >= players.length) {
-    seat = 0;
+  if (following === null) {
     const endedRound = round;
     round = endedRound + 1;
+    seat = firstSeat(round, players.length);
+    // Everyone has had the same number of turns now: these standings hold for the whole next round.
+    roundStartTotals = totalsOf(scores, players);
 
     if (endedRound === EMPIRE_RULES.lateTokenRound && !players.some((p) => p.lateTokenGiven)) {
-      const last = strictlyLast(players, scores);
+      const last = underdogOf(players, totalsOf(scores, players));
       if (last !== null) {
         players = players.map((p) =>
           p.id === last ? { ...p, stealTokens: p.stealTokens + 1, lateTokenGiven: true } : p
@@ -131,6 +157,7 @@ function endTurn(state: EmpireState, now: number, deps: EmpireDeps): EmpireState
         players,
         seat,
         round,
+        roundStartTotals,
         event: null,
         finished: true,
         winnerIds: deps.scoring.winners(scores, "cap")
@@ -140,8 +167,8 @@ function endTurn(state: EmpireState, now: number, deps: EmpireDeps): EmpireState
     event = endedRound % EMPIRE_RULES.eventEvery === 0 ? deps.cards.drawEvent(deps.rng, CONTINENTS) : null;
   }
 
-  const next: EmpireState = { ...base, players, seat, round, event, turnStartedAt: now };
-  return { ...next, hand: dealTo(next, scores, deps) };
+  const next: EmpireState = { ...base, players, seat, round, roundStartTotals, event, turnStartedAt: now };
+  return { ...next, hand: dealTo(next, deps) };
 }
 
 function initEmpire(playerIds: string[], now: number, deps: EmpireDeps, turnMs?: number): EmpireState {
@@ -166,7 +193,7 @@ function initEmpire(playerIds: string[], now: number, deps: EmpireDeps, turnMs?:
     players,
     owners,
     round: 1,
-    seat: 0,
+    seat: firstSeat(1, players.length),
     turnStartedAt: now,
     ...(turnMs ? { turnMs } : {}),
     empireHolder: null,
@@ -177,8 +204,8 @@ function initEmpire(playerIds: string[], now: number, deps: EmpireDeps, turnMs?:
     finished: false,
     winnerIds: []
   };
-  const scores = scoreState(base, deps).scores;
-  return { ...base, hand: dealTo(base, scores, deps) };
+  const started: EmpireState = { ...base, roundStartTotals: totalsOf(scoreState(base, deps).scores, players) };
+  return { ...started, hand: dealTo(started, deps) };
 }
 
 function pick(state: EmpireState, index: number): EmpireState | ActionError {
@@ -240,9 +267,10 @@ function steal(
     return fail(409, "You can only steal a country that borders one of yours.");
   }
 
-  const scores = scoreState(state, deps).scores;
-  if (totalOf(scores, owner) < totalOf(scores, playerId)) {
-    return fail(409, "You can only steal from players at or above your score.");
+  // Compare standings from the start of the round so seat order doesn't decide who may steal.
+  const startTotals = state.roundStartTotals ?? {};
+  if ((startTotals[owner] ?? 0) < (startTotals[playerId] ?? 0)) {
+    return fail(409, "You can only steal from players at or above your score at the start of the round.");
   }
 
   if (deps.scoring.protectedCodes(state, deps.geo).has(code)) {

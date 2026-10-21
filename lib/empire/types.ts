@@ -15,6 +15,8 @@ export const EMPIRE_RULES = {
   fortLimit: 2,
   cardsDealt: 2,
   underdogCards: 3,
+  /** The underdog must also trail the round-start leader by at least this many points. */
+  underdogGap: 2,
   /** An event is revealed after every Nth full round and lasts the next round. */
   eventEvery: 3,
   wildChance: 0.1,
@@ -117,8 +119,10 @@ export type EmpireState = {
   owners: Record<string, string>;
   /** 1-based. */
   round: number;
-  /** Index into players of whose turn it is. */
+  /** Index into players of whose turn it is. Turn order snakes: odd rounds go seat 0..n-1, even rounds n-1..0. */
   seat: number;
+  /** Total score of each player when the current round began (everyone has had equal turns). Drives the underdog hand and the steal rule. Older saved games omit it. */
+  roundStartTotals?: Record<string, number>;
   turnStartedAt: number;
   /** Length of each turn in ms; older saved games omit it and use EMPIRE_RULES.turnMs. */
   turnMs?: number;

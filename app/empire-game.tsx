@@ -11,6 +11,7 @@ export type EmpireScore = {
   sets: { region: string; points: number }[]; majorities: string[]; total: number;
 };
 export type EmpireView = {
+  underdogId?: string | null; roundStartTotals?: Record<string, number>;
   round: number; roundCap: number; winPoints: number; currentPlayerId: string | null;
   turnStartedAt: number; turnMs: number; serverNow: number; largestGroups?: Record<string, string[]>;
   event: { kind: string; continent?: string; label: string } | null; nextEventAfterRound: number;
@@ -102,7 +103,7 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
           <button type="button" className="quiet" disabled={busy} onClick={() => void run({ type: "pass" })}>Pass</button>
         </div>
         {!picked ? <p className="empire-hint">Pick a card first.</p> : owner && owner !== playerId ? <p className="empire-hint">{`${resolved?.name} belongs to ${nameOf(owner)}. Name its capital to steal it (${me?.stealTokens ?? 0} steal${me?.stealTokens === 1 ? "" : "s"} left).`}</p> : null}
-        <p className="empire-hint">Steals: the country must border yours and its owner must have at least your score. Capitals, forts and full region sets are safe.</p>
+        <p className="empire-hint">Steals: the country must border yours and its owner must have at least your score at the start of the round. Capitals, forts and full region sets are safe.</p>
       </form>}
       {notice && <p className="notice">{notice}</p>}
       <WorldMap claims={countryClaims} players={players} youId={playerId} emphasis={view.largestGroups}/>

@@ -59,7 +59,7 @@ function player(id: string, capital: string, stealTokens: number = startTokens, 
 }
 
 function stateOf(players: EmpirePlayer[], owners: Record<string, string>, extra: Partial<EmpireState> = {}): EmpireState {
-  return {
+  const state: EmpireState = {
     players,
     owners,
     round: 1,
@@ -74,6 +74,12 @@ function stateOf(players: EmpirePlayer[], owners: Record<string, string>, extra:
     winnerIds: [],
     ...extra
   };
+  // Unless a test says otherwise, the round "began" with today's standings.
+  if (!state.roundStartTotals) {
+    const scores = scoresOf(state);
+    state.roundStartTotals = Object.fromEntries(players.map((p) => [p.id, scores[p.id].total]));
+  }
+  return state;
 }
 
 function ownedBy(state: Pick<EmpireState, "owners">, id: string): string[] {
@@ -84,13 +90,14 @@ function scoresOf(state: Pick<EmpireState, "players" | "owners" | "empireHolder"
   return scoring.scoreEmpire(state, geo).scores;
 }
 
-/** Id of the unique lowest total (the module's "strictly last"), or null. */
-function strictlyLastId(state: EmpireState): string | null {
+/** Id of the round-start underdog: unique lowest round-start total and at least underdogGap behind the leader, or null. */
+function underdogId(state: EmpireState): string | null {
   if (state.players.length < 2) return null;
-  const scores = scoresOf(state);
-  const min = Math.min(...state.players.map((p) => scores[p.id].total));
-  const lowest = state.players.filter((p) => scores[p.id].total === min);
-  return lowest.length === 1 ? lowest[0].id : null;
+  const totals = state.roundStartTotals ?? {};
+  const values = state.players.map((p) => totals[p.id] ?? 0);
+  const min = Math.min(...values);
+  const lowest = state.players.filter((p) => (totals[p.id] ?? 0) === min);
+  return lowest.length === 1 && Math.max(...values) - min >= EMPIRE_RULES.underdogGap ? lowest[0].id : null;
 }
 
 /** Countries reachable from `start` in breadth-first order, skipping `avoid`. The first k form a connected set. */
@@ -178,7 +185,7 @@ function checkTurnStart(state: EmpireState, label: string) {
   if (state.finished) return;
   assert.equal(state.chosen, null, `${label}: a pick survived the turn change`);
   const current = state.players[state.seat];
-  const expected = strictlyLastId(state) === current.id ? EMPIRE_RULES.underdogCards : EMPIRE_RULES.cardsDealt;
+  const expected = underdogId(state) === current.id ? EMPIRE_RULES.underdogCards : EMPIRE_RULES.cardsDealt;
   assert.equal(state.hand.length, expected, `${label}: hand size ${state.hand.length}, expected ${expected}`);
 
   const closed = closedContinentOf(state);
@@ -205,7 +212,16 @@ function checkTransition(prev: EmpireState, next: EmpireState, action: EmpireAct
   const entry = next.log[next.log.length - 1];
   const actorPrev = prev.players[prev.seat];
   assert.equal(entry.playerId, actorPrev.id, `${label}: log credits the wrong player`);
-  assert.notEqual(next.seat, prev.seat, `${label}: turn did not pass`);
+  if (next.round === prev.round) {
+    assert.equal(next.seat, prev.seat + (prev.round % 2 === 1 ? 1 : -1), `${label}: turn did not pass along the snake order`);
+  } else {
+    // The round closed: the player who went last now goes first (snake), standings are re-recorded.
+    const lastSeat = prev.round % 2 === 1 ? prev.players.length - 1 : 0;
+    assert.equal(prev.seat, lastSeat, `${label}: round closed from the wrong seat`);
+    assert.equal(next.seat, next.round % 2 === 1 ? 0 : next.players.length - 1, `${label}: wrong opening seat`);
+    const scores = scoresOf(next);
+    assert.deepEqual(next.roundStartTotals, Object.fromEntries(next.players.map((p) => [p.id, scores[p.id].total])), `${label}: round-start totals not recorded`);
+  }
   const actorNext = next.players.find((p) => p.id === actorPrev.id) as EmpirePlayer;
   const tokensBefore = prev.players.find((p) => p.id === actorPrev.id)?.stealTokens ?? 0;
 
@@ -287,7 +303,7 @@ function chooseAction(state: EmpireState, actorId: string, rng: Rng): EmpireActi
   const card = state.hand[state.chosen as number];
   const mine = new Set(ownedBy(state, actorId));
   const ctx: CardContext = { ownedByMe: mine, neighbours: (c) => geo.neighbours(c) };
-  const scores = scoresOf(state);
+  const start = state.roundStartTotals ?? {};
   const protectedSet = scoring.protectedCodes(state, geo);
   const closed = closedContinentOf(state);
   const roll = rng();
@@ -299,7 +315,7 @@ function chooseAction(state: EmpireState, actorId: string, rng: Rng): EmpireActi
       const owner = state.owners[code];
       return owner !== undefined && owner !== actorId
         && geo.neighbours(code).some((n) => mine.has(n))
-        && scores[owner].total >= scores[actorId].total
+        && (start[owner] ?? 0) >= (start[actorId] ?? 0)
         && !protectedSet.has(code)
         && cards.cardFits(card, code, ctx);
     });
@@ -606,15 +622,15 @@ test("timeouts across several turns land on the right player and round", () => {
   assert.equal(s2.turnStartedAt, 2 * turnMs);
 
   const s3 = actions.advanceTimeouts(s2, 3 * turnMs, deps);
-  assert.equal(s3.seat, 0);
+  assert.equal(s3.seat, 2, "round 2 opens with the last seat");
   assert.equal(s3.round, 2);
   assert.equal(s3.event, null);
 
   // Nine expired turns: rounds 1-3 all close; round 3 closing reveals an event for round 4.
   const s9 = actions.advanceTimeouts(s0, 9 * turnMs, deps);
   assert.equal(s9.round, 4);
-  assert.equal(s9.seat, 0);
-  assert.deepEqual(s9.log.map((e) => e.playerId), [...order, ...order, ...order]);
+  assert.equal(s9.seat, 2);
+  assert.deepEqual(s9.log.map((e) => e.playerId), [...order, ...[...order].reverse(), ...order]);
   assert.ok(s9.event !== null, "round 3 closing should reveal an event");
   assert.equal(s9.turnStartedAt, 9 * turnMs);
 
@@ -650,10 +666,10 @@ test("late steal token goes once to the strictly last player after round 8", () 
   const start = stateOf(
     [player("p1", "FR"), player("p2", "JP")],
     { FR: "p1", DE: "p1", IT: "p1", JP: "p2" },
-    { round: lateTokenRound, seat: 1, hand: [WILD, WILD] }
+    { round: lateTokenRound, seat: 0, hand: [WILD, WILD] }
   );
-  let s = ok(actions.applyAction(start, "p2", { type: "pick", index: 0 }, 10, deps));
-  s = ok(actions.applyAction(s, "p2", { type: "pass" }, 10, deps));
+  let s = ok(actions.applyAction(start, "p1", { type: "pick", index: 0 }, 10, deps));
+  s = ok(actions.applyAction(s, "p1", { type: "pass" }, 10, deps));
   assert.equal(s.round, lateTokenRound + 1);
   const p2 = s.players[1];
   assert.equal(p2.stealTokens, startTokens + 1, "strictly last player gets the late token");
@@ -663,6 +679,7 @@ test("late steal token goes once to the strictly last player after round 8", () 
   // A later round end does not give another one.
   s = { ...s, seat: 1, hand: [WILD, WILD], chosen: null };
   s = ok(actions.applyAction(s, "p2", { type: "pass" }, 30, deps));
+  assert.equal(s.round, lateTokenRound + 2);
   assert.equal(s.players[1].stealTokens, startTokens + 1, "only once per game");
 });
 
@@ -671,10 +688,10 @@ test("no late token when the last place is shared", () => {
   const start = stateOf(
     [player("p1", "FR"), player("p2", "JP")],
     { FR: "p1", DE: "p1", JP: "p2", KR: "p2" },
-    { round: lateTokenRound, seat: 1, hand: [WILD, WILD] }
+    { round: lateTokenRound, seat: 0, hand: [WILD, WILD] }
   );
-  let s = ok(actions.applyAction(start, "p2", { type: "pick", index: 0 }, 10, deps));
-  s = ok(actions.applyAction(s, "p2", { type: "pass" }, 10, deps));
+  let s = ok(actions.applyAction(start, "p1", { type: "pick", index: 0 }, 10, deps));
+  s = ok(actions.applyAction(s, "p1", { type: "pass" }, 10, deps));
   assert.equal(s.players[1].stealTokens, startTokens);
   assert.equal(s.players[1].lateTokenGiven ?? false, false);
 });

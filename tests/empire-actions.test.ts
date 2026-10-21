@@ -149,6 +149,8 @@ function game(
     round?: number;
     lateTokenGiven?: string;
     finished?: boolean;
+    /** Standings at the start of the round; defaults to the current country counts. */
+    start?: [number, number];
   } = {}
 ): EmpireState {
   const [t1, t2] = o.tokens ?? [2, 2];
@@ -162,6 +164,9 @@ function game(
     owners: { ...owners },
     round: o.round ?? 1,
     seat: o.seat ?? 0,
+    roundStartTotals: o.start
+      ? { p1: o.start[0], p2: o.start[1] }
+      : { p1: Object.values(owners).filter((id) => id === "p1").length, p2: Object.values(owners).filter((id) => id === "p2").length },
     turnStartedAt: 1000,
     empireHolder: null,
     event: o.event ?? null,
@@ -295,9 +300,9 @@ test("a successful claim owns the country, logs it, and ends the turn", () => {
   assert.equal(after.turnStartedAt, 2000);
   assert.equal(after.chosen, null);
 
-  // After the claim p1 has 3 and p2 has 2, so p2 is the underdog and gets three cards.
-  assert.equal(dealt[dealt.length - 1].count, EMPIRE_RULES.underdogCards);
-  assert.equal(after.hand.length, EMPIRE_RULES.underdogCards);
+  // Mid-round scores don't matter: the round started tied at 2 each, so p2 gets the normal hand.
+  assert.equal(dealt[dealt.length - 1].count, EMPIRE_RULES.cardsDealt);
+  assert.equal(after.hand.length, EMPIRE_RULES.cardsDealt);
   assert.deepEqual([...dealt[dealt.length - 1].ctx.ownedByMe].sort(), ["E", "H"]);
   assert.deepEqual(dealt[dealt.length - 1].ctx.unclaimed, ["D", "F", "G"]);
 });
@@ -359,6 +364,8 @@ test("steal target must border one of your countries", () => {
   );
 });
 
+const PUNCH_DOWN = "You can only steal from players at or above your score at the start of the round.";
+
 test("steal cannot punch down at a lower score", () => {
   const { deps } = fakeDeps();
   // p1 has 4 countries, p2 has 2. E borders D (p1's), so the border check passes.
@@ -366,7 +373,7 @@ test("steal cannot punch down at a lower score", () => {
   fails(
     actions.applyAction(s, "p1", { type: "steal", code: "E", capital: "city-E" }, 2000, deps),
     409,
-    "You can only steal from players at or above your score."
+    PUNCH_DOWN
   );
 });
 
@@ -461,7 +468,7 @@ test("rounds wrap after the last seat, and every third round reveals an event fo
 
   s = passAs(s, 3000, deps);
   assert.equal(s.round, 2);
-  assert.equal(s.seat, 0);
+  assert.equal(s.seat, 1, "round 2 snakes back: the last seat opens it");
   assert.equal(s.event, null);
   assert.equal(s.turnStartedAt, 3000);
 
@@ -491,26 +498,31 @@ test("the strictly lowest player is dealt three cards and others two", () => {
   s = passAs(s, 2000, deps);
   assert.equal(dealt[0].count, 3, "p2 is strictly last on 1 against 3");
   s = passAs(s, 3000, deps);
-  assert.deepEqual(dealt.map((d) => d.count), [3, 2], "p1 is no longer last after round 1");
+  assert.deepEqual(dealt.map((d) => d.count), [3, 3], "round 2 opens with p2, still last on the new round-start standings");
+  s = passAs(s, 4000, deps);
+  assert.deepEqual(dealt.map((d) => d.count), [3, 3, 2], "p1 is not the underdog");
 });
 
 test("the strictly last player gets one late steal token after round 8, and only once", () => {
   const { deps } = fakeDeps();
 
-  const lastGetsIt = passAs(game({ A: "p1", B: "p1", C: "p1", H: "p2" }, { round: 8, seat: 1 }), 2000, deps);
+  const lastGetsIt = passAs(game({ A: "p1", B: "p1", C: "p1", H: "p2" }, { round: 8, seat: 0 }), 2000, deps);
   assert.equal(lastGetsIt.round, 9);
   assert.deepEqual(lastGetsIt.players[1], { id: "p2", capital: "H", stealTokens: 3, forts: [], lateTokenGiven: true });
   assert.equal(lastGetsIt.players[0].stealTokens, 2);
 
-  const tieGetsNothing = passAs(game({ A: "p1", H: "p2" }, { round: 8, seat: 1 }), 2000, deps);
+  const tieGetsNothing = passAs(game({ A: "p1", H: "p2" }, { round: 8, seat: 0 }), 2000, deps);
   assert.equal(tieGetsNothing.players[1].stealTokens, 2);
   assert.equal(tieGetsNothing.players[1].lateTokenGiven, undefined);
+
+  const tooCloseGetsNothing = passAs(game({ A: "p1", B: "p1", H: "p2" }, { round: 8, seat: 0 }), 2000, deps);
+  assert.equal(tooCloseGetsNothing.players[1].stealTokens, 2, "last by only 1 point is not enough");
 
   const otherRound = passAs(game({ A: "p1", B: "p1", C: "p1", H: "p2" }, { round: 7, seat: 1 }), 2000, deps);
   assert.equal(otherRound.players[1].stealTokens, 2);
 
   const alreadyGiven = passAs(
-    game({ A: "p1", B: "p1", C: "p1", H: "p2" }, { round: 8, seat: 1, lateTokenGiven: "p1" }),
+    game({ A: "p1", B: "p1", C: "p1", H: "p2" }, { round: 8, seat: 0, lateTokenGiven: "p1" }),
     2000,
     deps
   );
@@ -560,11 +572,11 @@ test("timeouts pass expired turns without a player action", () => {
     [
       ["p1", 21000, "pass"],
       ["p2", 41000, "pass"],
-      ["p1", 61000, "pass"]
+      ["p2", 61000, "pass"]
     ]
   );
   assert.equal(several.round, 2);
-  assert.equal(several.seat, 1);
+  assert.equal(several.seat, 0, "p2 opened round 2 (snake order), so p1 is next");
   assert.equal(several.turnStartedAt, 61000);
 });
 
@@ -591,4 +603,143 @@ test("applyAction and advanceTimeouts never mutate their input", () => {
     assert.equal(JSON.stringify(state), before, `${name} left the input unchanged`);
     assert.notEqual(result, state, `${name} returned a new object`);
   }
+});
+
+// ---------- Turn-order fairness: round-start standings and snake order ----------
+
+/** Plays `turns` passes and returns [round, playerId] for each acting turn, in order. */
+function passOrder(state: EmpireState, turns: number, deps: EmpireDeps): [number, string][] {
+  const out: [number, string][] = [];
+  let s = state;
+  for (let i = 0; i < turns; i += 1) {
+    out.push([s.round, s.players[s.seat].id]);
+    s = passAs(s, 2000 + i, deps);
+  }
+  return out;
+}
+
+test("init records the round-start standings and nobody is the underdog in round 1", () => {
+  const { deps, dealt } = fakeDeps({ capitals: ["A", "H", "C"] });
+  const state = actions.initEmpire(["p1", "p2", "p3"], 5000, deps);
+  assert.deepEqual(state.roundStartTotals, { p1: 1, p2: 1, p3: 1 });
+  assert.equal(state.seat, 0);
+  assert.equal(dealt[dealt.length - 1].count, EMPIRE_RULES.cardsDealt);
+  assert.equal(EMPIRE_RULES.underdogGap, 2);
+});
+
+test("the last seat mid-round is not the underdog when the round-start scores are tied", () => {
+  const { deps, dealt } = fakeDeps({ capitals: ["A", "H", "C"] });
+  let s = actions.initEmpire(["p1", "p2", "p3"], 5000, deps);
+  // The first two seats each claim a country, so the live standings are 2-2-1 with seat 3 "behind".
+  const first = s.players[0].id;
+  s = ok(actions.applyAction(s, first, { type: "pick", index: 0 }, 5100, deps));
+  s = ok(actions.applyAction(s, first, { type: "claim", code: "B" }, 5200, deps));
+  const second = s.players[1].id;
+  s = ok(actions.applyAction(s, second, { type: "pick", index: 0 }, 5300, deps));
+  s = ok(actions.applyAction(s, second, { type: "claim", code: "F" }, 5400, deps));
+  assert.equal(s.seat, 2);
+  assert.deepEqual(s.roundStartTotals, { p1: 1, p2: 1, p3: 1 }, "round-start standings do not move mid-round");
+  assert.equal(dealt[dealt.length - 1].count, EMPIRE_RULES.cardsDealt, "last seat gets the normal hand");
+  assert.equal(s.hand.length, EMPIRE_RULES.cardsDealt);
+});
+
+test("the underdog hand needs a strict last place that is at least 2 points behind at the round start", () => {
+  const { deps, dealt } = fakeDeps();
+  const owners = { A: "p1", B: "p1", C: "p1", D: "p1", E: "p2", H: "p2" };
+  const cases: { start: [number, number]; count: number; why: string }[] = [
+    { start: [4, 2], count: EMPIRE_RULES.underdogCards, why: "2 behind the leader" },
+    { start: [3, 2], count: EMPIRE_RULES.cardsDealt, why: "only 1 behind: the gap of 2 is required" },
+    { start: [3, 3], count: EMPIRE_RULES.cardsDealt, why: "tied at the round start" },
+    { start: [2, 2], count: EMPIRE_RULES.cardsDealt, why: "live scores are ignored: tied at the round start" }
+  ];
+  for (const { start, count, why } of cases) {
+    // p1 passes, so the next hand is p2's, dealt from the round-start standings.
+    passAs(game(owners, { start }), 2000, deps);
+    assert.equal(dealt[dealt.length - 1].count, count, why);
+  }
+  // A shared last place is never an underdog, even with a big gap.
+  const base = game(owners);
+  const three: EmpireState = {
+    ...base,
+    players: [...base.players, { id: "p3", capital: "C", stealTokens: 2, forts: [] }],
+    roundStartTotals: { p1: 5, p2: 1, p3: 1 }
+  };
+  passAs(three, 2000, deps);
+  assert.equal(dealt[dealt.length - 1].count, EMPIRE_RULES.cardsDealt, "p2 and p3 share last place");
+});
+
+test("steal permission compares round-start totals, not live scores", () => {
+  const { deps } = fakeDeps();
+  const steal = (s: EmpireState) => actions.applyAction(s, "p1", { type: "steal", code: "E", capital: "city-E" }, 2000, deps);
+  // Live: p1 has 4 and p2 has 2. At the round start they were tied, so p1 may steal from p2.
+  const board = { A: "p1", B: "p1", C: "p1", D: "p1", E: "p2", H: "p2" };
+  const allowed = ok(steal(game(board, { chosen: 0, start: [2, 2] })));
+  assert.equal(allowed.owners.E, "p1");
+  // Live p2 is behind, but p2 started the round above p1: allowed.
+  ok(steal(game(board, { chosen: 0, start: [1, 3] })));
+  // Live: p2 is ahead right now (5 against 3) but started the round behind p1: refused.
+  const live = { A: "p1", B: "p1", D: "p1", C: "p2", E: "p2", F: "p2", G: "p2", H: "p2" };
+  fails(steal(game(live, { chosen: 0, start: [4, 2] })), 409, PUNCH_DOWN);
+});
+
+test("round-start standings are recorded at every round wrap and held through the next round", () => {
+  const { deps } = fakeDeps();
+  let s = game({ A: "p1", H: "p2" }, { chosen: 0 });
+  s = ok(actions.applyAction(s, "p1", { type: "claim", code: "B" }, 2000, deps));
+  assert.deepEqual(s.roundStartTotals, { p1: 1, p2: 1 }, "p1's claim does not change the round-start standings");
+  s = passAs(s, 3000, deps);
+  assert.equal(s.round, 2);
+  assert.deepEqual(s.roundStartTotals, { p1: 2, p2: 1 }, "the wrap records end-of-round totals");
+  // Round 2 opens with p2 (snake), then p1 claims C and closes the round.
+  s = passAs(s, 4000, deps);
+  s = ok(actions.applyAction(s, "p1", { type: "pick", index: 0 }, 4100, deps));
+  s = ok(actions.applyAction(s, "p1", { type: "claim", code: "C" }, 4200, deps));
+  assert.equal(s.round, 3);
+  assert.deepEqual(s.roundStartTotals, { p1: 3, p2: 1 });
+});
+
+test("the late steal token uses end-of-round totals with the same 2-point gap", () => {
+  const { deps } = fakeDeps();
+  // Round-start totals are stale on purpose: only the totals at the end of round 8 count.
+  const stale = { round: EMPIRE_RULES.lateTokenRound, seat: 0, start: [1, 1] as [number, number] };
+  const given = passAs(game({ A: "p1", B: "p1", C: "p1", H: "p2" }, stale), 2000, deps);
+  assert.equal(given.players[1].stealTokens, 3);
+  const tooClose = passAs(game({ A: "p1", B: "p1", H: "p2" }, stale), 2000, deps);
+  assert.equal(tooClose.players[1].stealTokens, 2);
+});
+
+test("turn order snakes: 2 players go A-B, B-A, A-B, B-A over four rounds", () => {
+  const { deps } = fakeDeps();
+  const state = actions.initEmpire(["p1", "p2"], 1000, deps);
+  const [a, b] = state.players.map((p) => p.id);
+  assert.deepEqual(passOrder(state, 8, deps), [[1, a], [1, b], [2, b], [2, a], [3, a], [3, b], [4, b], [4, a]]);
+});
+
+test("turn order snakes: 3 players go 1-2-3, 3-2-1, 1-2-3, 3-2-1 over four rounds", () => {
+  const { deps } = fakeDeps({ capitals: ["A", "H", "C"] });
+  const state = actions.initEmpire(["p1", "p2", "p3"], 1000, deps);
+  const [a, b, c] = state.players.map((p) => p.id);
+  assert.deepEqual(passOrder(state, 12, deps), [
+    [1, a], [1, b], [1, c], [2, c], [2, b], [2, a], [3, a], [3, b], [3, c], [4, c], [4, b], [4, a]
+  ]);
+  // Seat order itself never changes.
+  assert.deepEqual(passAs(state, 2000, deps).players.map((p) => p.id), [a, b, c]);
+});
+
+test("timeouts follow the snake order across a round boundary", () => {
+  const { deps } = fakeDeps({ capitals: ["A", "H", "C"] });
+  const start = actions.initEmpire(["p1", "p2", "p3"], 1000, deps);
+  const [a, b, c] = start.players.map((p) => p.id);
+  const after = actions.advanceTimeouts(start, 1000 + 5 * EMPIRE_RULES.turnMs + 10, deps);
+  assert.deepEqual(after.log.map((e) => [e.playerId, e.round]), [[a, 1], [b, 1], [c, 1], [c, 2], [b, 2]]);
+  assert.equal(after.round, 2);
+  assert.equal(after.players[after.seat].id, a, "seat 1 is next in round 2");
+  assert.equal(after.turnStartedAt, 1000 + 5 * EMPIRE_RULES.turnMs);
+
+  // Two players: the last seat plays twice in a row across the boundary.
+  const duo = actions.initEmpire(["p1", "p2"], 1000, deps);
+  const [x, y] = duo.players.map((p) => p.id);
+  const duoAfter = actions.advanceTimeouts(duo, 1000 + 3 * EMPIRE_RULES.turnMs, deps);
+  assert.deepEqual(duoAfter.log.map((e) => [e.playerId, e.round]), [[x, 1], [y, 1], [y, 2]]);
+  assert.equal(duoAfter.players[duoAfter.seat].id, x);
 });

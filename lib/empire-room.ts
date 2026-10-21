@@ -9,7 +9,7 @@ import { countryByCode } from "@/lib/countries";
 import { geo } from "@/lib/empire/geo";
 import { cards } from "@/lib/empire/cards";
 import { scoring, largestEmpireGroups } from "@/lib/empire/scoring";
-import { actions } from "@/lib/empire/actions";
+import { actions, underdogOf } from "@/lib/empire/actions";
 import { EMPIRE_RULES, type ActionError, type EmpireAction, type EmpireDeps, type EmpireState } from "@/lib/empire/types";
 
 export type EmpireRoom = {
@@ -134,8 +134,10 @@ export function empireSnapshot(room: EmpireRoom, now: number) {
       .map((entry) => ({ code: entry.code!, playerId: entry.playerId, points: entry.points ?? 1, round: entry.round, at: entry.at }))
   ].map((entry, order) => ({ ...entry, order, name: nameOf(entry.code) }));
   const roundsUntilEvent = EMPIRE_RULES.eventEvery - ((empire.round - 1) % EMPIRE_RULES.eventEvery);
+  const roundStartTotals = empire.roundStartTotals ?? {};
   return {
     empire: {
+      underdogId: empire.finished ? null : underdogOf(empire.players, roundStartTotals), roundStartTotals,
       round: empire.round, roundCap: EMPIRE_RULES.roundCap, winPoints: EMPIRE_RULES.winPoints,
       currentPlayerId: empire.finished ? null : empire.players[empire.seat]?.id ?? null,
       turnStartedAt: empire.turnStartedAt, turnMs: empire.turnMs ?? EMPIRE_RULES.turnMs, serverNow: now,
