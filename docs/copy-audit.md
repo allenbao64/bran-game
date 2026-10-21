@@ -146,3 +146,7 @@ API error messages are unchanged and not counted: each says what went wrong.
 | app/world-map.tsx:32 | n CLAIMED, legend names and counts | keep | |
 | app/world-map.tsx:31,36 | aria-labels | keep | |
 | app/world-map.tsx:45 | Claimed by {x} (you) · part of their largest territory; Available country | keep | |
+
+## Follow-up: home page intro
+
+The home page's left column was cut in the first pass. It's back, rewritten to explain the game rather than fill space: a heading that names the core action ("Name countries. Paint the map."), one sentence on who it's for and how it works, an example map in the game's own colours, and three concrete steps. On phones the room form comes first and the intro follows.

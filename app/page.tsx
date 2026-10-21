@@ -43,6 +43,14 @@ function errorText(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
+/** A mid-game board for the home page: three players spread over three continents. */
+const HOME_EXAMPLE_PLAYERS = [{ id: "p1", name: "Player 1" }, { id: "p2", name: "Player 2" }, { id: "p3", name: "Player 3" }];
+const HOME_EXAMPLE_CLAIMS: Record<string, string> = {
+  FR: "p1", DE: "p1", ES: "p1", IT: "p1", PL: "p1", NO: "p1", EG: "p1", NG: "p1",
+  BR: "p2", AR: "p2", PE: "p2", CO: "p2", US: "p2", MX: "p2", AU: "p2",
+  CN: "p3", IN: "p3", MN: "p3", KZ: "p3", TH: "p3", JP: "p3", ZA: "p3", KE: "p3"
+};
+
 export default function Home() {
   const [stage, setStage] = useState<Stage>("home");
   const [selectedGame, setSelectedGame] = useState<GameId>("countries");
@@ -253,6 +261,16 @@ export default function Home() {
     <header className="topbar"><a className="brand" href="/"><span className="mark">A</span> ATLAS <b>SPRINT</b></a><div className="top-meta"><span className="build-version" title={`Deployed commit ${BUILD_VERSION}`}>BUILD {BUILD_VERSION.slice(0, 7)}</span></div></header>
     <section className="content">
     {stage === "home" && <div className="home-grid">
+      <section className="home-intro" aria-label="How it works">
+        <h1>Name countries. Paint the map.</h1>
+        <p className="lede">A geography game for 2–3 players. Every country you name turns your colour on a shared world map.</p>
+        <WorldMap claims={HOME_EXAMPLE_CLAIMS} players={HOME_EXAMPLE_PLAYERS} youId="" compact/>
+        <ol className="home-steps">
+          <li><span><b>Pick a game.</b> Country Sprint has three modes: a live race, turns, or Empire.</span></li>
+          <li><span><b>Share the room code</b> with one or two friends.</span></li>
+          <li><span><b>Name it first, own it.</b> Most countries, or most points, wins.</span></li>
+        </ol>
+      </section>
       <div className="card"><div className="card-title">GAME <span>2–3 PLAYERS</span></div>
         <div className="game-picker" role="group" aria-label="Choose a game">
           {(Object.values(GAME_CATALOG)).map((option) => <button type="button" className={`game-option${selectedGame === option.id ? " selected" : ""}`} key={option.id} aria-pressed={selectedGame === option.id} onClick={() => setSelectedGame(option.id)}>

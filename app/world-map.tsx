@@ -7,10 +7,10 @@ import { playerColor } from "@/lib/player-colors";
 
 type MapPlayer = { id: string; name: string };
 /** `emphasis` maps a player id to the country codes to outline thickly in that player's colour (their largest territory). */
-type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]> };
+type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean };
 
 /** A shared board: every claimed country is filled with its owner's colour. */
-export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis }: WorldMapProps) {
+export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false }: WorldMapProps) {
   const ids = useMemo(() => players.map((player) => player.id), [players]);
   const names = useMemo(() => new Map(players.map((player) => [player.id, player.name])), [players]);
   const counts = useMemo(() => {
@@ -29,10 +29,10 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
     .sort((a, b) => Number(emphasised.has(a.code ?? "")) - Number(emphasised.has(b.code ?? ""))), [emphasised]);
 
   return <section className="world-map" aria-label="Live world map of claimed countries">
-    <div className="world-map-heading"><span>{heading}</span><b>{total} CLAIMED</b></div>
+    {!compact && <><div className="world-map-heading"><span>{heading}</span><b>{total} CLAIMED</b></div>
     <div className="map-legend">{players.map((player) => <span key={player.id} className="legend-item">
       <i style={{ background: playerColor(ids, player.id) }}/>{player.name}{player.id === youId ? " (you)" : ""}<b>{counts.get(player.id) ?? 0}</b>
-    </span>)}</div>
+    </span>)}</div></>}
     <svg viewBox="0 0 900 450" role="img" aria-label={`${total} countries have been claimed`}>
       <rect width="900" height="450" rx="8" className="map-ocean" />
       {drawn.map(({ country, index, code }) => {

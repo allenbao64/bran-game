@@ -89,6 +89,16 @@ test("the game lobby switches the selected game", async () => {
   assert.ok([...doc.querySelectorAll("button")].some((button) => button.textContent === "Create room"));
 });
 
+test("the home page explains the game beside the room form", async () => {
+  const doc = mount();
+  const intro = doc.querySelector(".home-intro");
+  assert.ok(intro, "intro section is shown");
+  assert.equal(intro!.querySelector("h1")?.textContent, "Name countries. Paint the map.");
+  assert.equal(intro!.querySelectorAll(".home-steps li").length, 3);
+  assert.ok(intro!.querySelectorAll(".map-country.claimed").length > 10, "the example map shows claimed countries");
+  assert.equal(intro!.querySelector(".map-legend"), null, "the example map has no legend");
+});
+
 test("the game lobby offers Overwatch Hero Sprint", async () => {
   const doc = mount();
   const heroOption = [...doc.querySelectorAll<HTMLButtonElement>(".game-option")].find((button) => button.textContent?.includes("Overwatch Hero Sprint"));
