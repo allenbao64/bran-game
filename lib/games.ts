@@ -2,7 +2,6 @@ export const GAME_CATALOG = {
   countries: {
     id: "countries",
     title: "Country Sprint",
-    prompt: "Name as many countries as you can.",
     durationSeconds: 10 * 60,
     durationLabel: "10 MIN",
     answerLabel: "COUNTRIES",
@@ -12,7 +11,6 @@ export const GAME_CATALOG = {
   champions: {
     id: "champions",
     title: "Champion Sprint",
-    prompt: "Name as many League champions as you can.",
     durationSeconds: 2 * 60,
     durationLabel: "2 MIN",
     answerLabel: "CHAMPIONS",
@@ -22,7 +20,6 @@ export const GAME_CATALOG = {
   overwatch: {
     id: "overwatch",
     title: "Overwatch Hero Sprint",
-    prompt: "Name as many Overwatch heroes as you can.",
     durationSeconds: 2 * 60,
     durationLabel: "2 MIN",
     answerLabel: "HEROES",

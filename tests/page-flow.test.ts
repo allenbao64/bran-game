@@ -74,19 +74,19 @@ test("joining opens the lobby from one response and ignores rapid repeated submi
     await pending;
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
-  assert.match(doc.body.textContent ?? "", /ROOM READY/);
+  assert.match(doc.body.textContent ?? "", /ABC234.*Copy/);
   assert.match(doc.body.textContent ?? "", /Brian/);
   assert.equal(requests, 1, "the successful join response already contains lobby state; no fragile follow-up GET is needed");
 });
 
-test("the game lobby switches the selected game and create-room label", async () => {
+test("the game lobby switches the selected game", async () => {
   const doc = mount();
   const championOption = [...doc.querySelectorAll<HTMLButtonElement>(".game-option")].find((button) => button.textContent?.includes("Champion Sprint"));
   assert.ok(championOption);
   act(() => championOption!.click());
   assert.equal(championOption!.getAttribute("aria-pressed"), "true");
-  const createButton = [...doc.querySelectorAll("button")].find((button) => button.textContent?.includes("Create Champion Sprint room"));
-  assert.ok(createButton);
+  assert.equal([...doc.querySelectorAll(".game-option")].filter((button) => button.getAttribute("aria-pressed") === "true").length, 1, "exactly one game is selected");
+  assert.ok([...doc.querySelectorAll("button")].some((button) => button.textContent === "Create room"));
 });
 
 test("the game lobby offers Overwatch Hero Sprint", async () => {
@@ -95,7 +95,7 @@ test("the game lobby offers Overwatch Hero Sprint", async () => {
   assert.ok(heroOption);
   act(() => heroOption!.click());
   assert.equal(heroOption!.getAttribute("aria-pressed"), "true");
-  assert.ok([...doc.querySelectorAll("button")].some((button) => button.textContent?.includes("Create Overwatch Hero Sprint room")));
+  assert.ok([...doc.querySelectorAll("button")].some((button) => button.textContent === "Create room"));
 });
 
 test("a host can start a two-player room from the lobby", async () => {
@@ -116,11 +116,11 @@ test("a host can start a two-player room from the lobby", async () => {
 
   const doc = mount(roomSession);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
-  const startButton = [...doc.querySelectorAll("button")].find((button) => button.textContent?.includes("Start round"));
+  const startButton = [...doc.querySelectorAll("button")].find((button) => button.textContent === "Start");
   assert.ok(startButton, "the host should be allowed to start with two players");
   await act(async () => { startButton!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.ok(calls.some((call) => call.body?.action === "start"));
-  assert.match(doc.body.textContent ?? "", /COUNTRY SPRINT/);
+  assert.match(doc.body.textContent ?? "", /Country Sprint.*TIME LEFT/);
   assert.ok(doc.querySelector(".world-map"), "country rounds should show the shared live map");
 
   doc.defaultView!.confirm = () => true;
@@ -128,7 +128,7 @@ test("a host can start a two-player room from the lobby", async () => {
   assert.ok(stopButton, "the host should have a way to end a live round");
   await act(async () => { stopButton!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.ok(calls.some((call) => call.body?.action === "end"));
-  assert.match(doc.body.textContent ?? "", /ANSWERS REVEALED/);
+  assert.match(doc.body.textContent ?? "", /Results/);
 });
 
 const jsonResponse = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { "content-type": "application/json" } });
@@ -152,7 +152,7 @@ test("a turns game shows the banner, round counter, card, scoreboard and only le
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   const text = () => doc.body.textContent ?? "";
   assert.match(text(), /ROUND 10 OF 12/);
-  assert.match(text(), /DOUBLE POINTS/);
+  assert.match(text(), /Double points/);
   assert.match(text(), /Landlocked country/);
   assert.match(text(), /Brian’s turn/);
   assert.match(text(), /Largest territory \(3 linked\)/, "current bonuses show live");
@@ -164,7 +164,7 @@ test("a turns game shows the banner, round counter, card, scoreboard and only le
 
   current = "p1";
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1000)); });
-  assert.match(text(), /It’s your turn/);
+  assert.match(text(), /Your turn/);
   assert.equal(field().disabled, false, "polling every 0.8s unlocks the input on your turn");
   await act(async () => { passButton().click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.ok(calls.some((call) => call.action === "pass"));
@@ -189,7 +189,7 @@ test("turn-based results show each score breakdown, awards and a replay that fil
   const doc = mount({ code: "ABC234", token: "a".repeat(64), playerId: "p1", name: "Host" });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   const text = doc.body.textContent ?? "";
-  assert.match(text, /FINAL SCORES/);
+  assert.match(text, /Results/);
   assert.match(text, /Owns all of Central Europe\+2/);
   assert.match(text, /Final score7/);
   assert.match(text, /First claim: Brian/);
@@ -198,7 +198,7 @@ test("turn-based results show each score breakdown, awards and a replay that fil
   assert.equal(doc.querySelectorAll(".map-country.claimed").length > 0, true, "the final map is shown before replaying");
   await act(async () => { play!.click(); });
   assert.equal(doc.querySelectorAll(".map-country.claimed").length, 0, "play restarts from an empty map");
-  assert.match(doc.body.textContent ?? "", /REPLAYING…/, "the first step says it is replaying");
+  assert.match(doc.body.textContent ?? "", /Replaying…/, "the first step says it is replaying");
   assert.doesNotMatch(doc.body.textContent ?? "", /PRESS PLAY/);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
   assert.match(doc.body.textContent ?? "", /CLAIM 1 OF 2/);
@@ -219,7 +219,6 @@ test("the Pass button locks when the turn clock reaches zero, like the input and
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)); });
   const passButton = [...doc.querySelectorAll("button")].find((button) => button.textContent === "Pass")!;
   assert.match(doc.body.textContent ?? "", /00s/);
-  assert.match(doc.body.textContent ?? "", /10S TURNS/, "the chosen speed shows in game");
   assert.equal(doc.querySelector<HTMLInputElement>(".guess-form input")!.disabled, true);
   assert.equal(passButton.disabled, true, "no passing once the clock shows 0");
   assert.equal(doc.querySelectorAll(".map-country.territory").length > 0, true, "largest groups get a thicker outline");

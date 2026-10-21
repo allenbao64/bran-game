@@ -55,7 +55,7 @@ test("the Empire results screen names the winner and breaks down scores", () => 
     view: snap.empire, players, playerId: "b", claimLog: snap.claimLog, colorOf, onLeave: () => {}
   }));
   assert.match(html, /Ana/);
-  assert.match(html, /rules the world/);
+  assert.match(html, /Ana wins/);
   assert.match(html, /Final score/);
   assert.match(html, /WINNER/);
 });
@@ -85,7 +85,6 @@ test("the Empire screen shows the chosen turn length and outlines each player's 
     view, players, playerId: "a", countryClaims: snap.countryClaims, skewMs: 0, notice: "",
     busy: false, onAction: async () => true, onNotice: () => {}, onEnd: () => {}, colorOf
   }));
-  assert.match(html, /30S TURNS/);
   assert.match(html, /0:30/, "the clock starts from the chosen length");
   assert.ok((html.match(/map-country[^"]*territory/g) ?? []).length >= 3, "the largest empire gets the thick outline");
 });

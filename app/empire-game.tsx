@@ -83,13 +83,12 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
   return <div className="game empire">
     <section>
       <div className="game-head"><div>
-        <p className="kicker">EMPIRE　<span className="live">● ROUND {view.round} OF {view.roundCap}</span>　FIRST TO {view.winPoints}　<span className="speed-tag">{Math.round(view.turnMs / 1000)}S TURNS</span></p>
-        <h1>{mine ? <>Your<br/><em>move.</em></> : <>{nameOf(view.currentPlayerId ?? undefined)}’s<br/><em>move.</em></>}</h1>
+        <h1>{mine ? "Your turn" : `${nameOf(view.currentPlayerId ?? undefined)}’s turn`}</h1>
+        <p className="round-line">ROUND {view.round} OF {view.roundCap}</p>
       </div><div className={seconds <= 5 ? "timer urgent" : "timer"}><small>TURN</small><b>0:{String(seconds).padStart(2, "0")}</b></div></div>
-      {view.event ? <p className="empire-event">EVENT THIS ROUND · {view.event.label}</p>
-        : <p className="lede">Next event card after round {view.nextEventAfterRound}.</p>}
+      {view.event && <p className="empire-event">Event: {view.event.label}</p>}
 
-      <div className="guess-title">{mine ? "PICK A CARD" : `${nameOf(view.currentPlayerId ?? undefined).toUpperCase()}’S CARDS`}<span>{picked ? "CARD PICKED" : "NO CARD YET"}</span></div>
+      <div className="guess-title">{mine ? "YOUR CARDS" : `${nameOf(view.currentPlayerId ?? undefined).toUpperCase()}’S CARDS`}</div>
       <div className="empire-hand">{view.hand.map((card, index) => <button type="button" key={`${card.label}-${index}`}
         className={`empire-card${view.chosen === index ? " selected" : ""}`} disabled={!mine || busy}
         aria-pressed={view.chosen === index} onClick={() => void onAction({ type: "pick", index })}>{card.label}</button>)}</div>
@@ -98,11 +97,12 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
         <input className="field" placeholder="Country name" aria-label="Country name" value={country} onChange={(event) => setCountry(event.target.value)} disabled={busy}/>
         {owner && owner !== playerId && <input className="field" placeholder={`Capital of ${resolved?.name}`} aria-label="Capital" value={capital} onChange={(event) => setCapital(event.target.value)} disabled={busy}/>}
         <div className="empire-buttons">
-          <button className="primary" disabled={busy || !country.trim() || !picked}>{owner && owner !== playerId ? "Steal ↵" : "Claim ↵"}</button>
+          <button className="primary" disabled={busy || !country.trim() || !picked}>{owner && owner !== playerId ? "Steal" : "Claim"}</button>
           <button type="button" className="quiet" disabled={busy || !country.trim() || owner !== playerId} onClick={() => withCountry((code) => ({ type: "fortify", code }))}>Fortify</button>
           <button type="button" className="quiet" disabled={busy} onClick={() => void run({ type: "pass" })}>Pass</button>
         </div>
-        <p className="empire-hint">{!picked ? "Pick a card, then name a country that fits it." : owner && owner !== playerId ? `${resolved?.name} belongs to ${nameOf(owner)}. Name its capital to steal it (${me?.stealTokens ?? 0} steal${me?.stealTokens === 1 ? "" : "s"} left).` : "Name a free country that fits your card. Type one of yours to fortify it."}</p>
+        {!picked ? <p className="empire-hint">Pick a card first.</p> : owner && owner !== playerId ? <p className="empire-hint">{`${resolved?.name} belongs to ${nameOf(owner)}. Name its capital to steal it (${me?.stealTokens ?? 0} steal${me?.stealTokens === 1 ? "" : "s"} left).`}</p> : null}
+        <p className="empire-hint">Steals: the country must border yours and its owner must have at least your score. Capitals, forts and full region sets are safe.</p>
       </form>}
       {notice && <p className="notice">{notice}</p>}
       <WorldMap claims={countryClaims} players={players} youId={playerId} emphasis={view.largestGroups}/>
@@ -121,7 +121,6 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
       })}
       <div className="aside-title">LATEST</div>
       <div className="empire-log">{view.log.length ? view.log.map((entry, index) => <small key={index}>R{entry.round} · {logLine(entry, nameOf)}</small>) : <small>No moves yet.</small>}</div>
-      <p className="aside-note">✳ Steal only countries that border yours, from players at or above your score. Capitals, forts and full region sets can’t be stolen.</p>
       {host && <button className="quiet end-round" disabled={busy} onClick={onEnd}>End game &amp; reveal</button>}
     </aside>
   </div>;
@@ -135,9 +134,8 @@ export function EmpireResults({ view, players, playerId, claimLog, colorOf, onLe
   const winners = view?.winnerIds ?? [];
   const winnerNames = winners.map((id) => players.find((player) => player.id === id)?.name ?? "Player");
   return <div className="panel results turns-results">
-    <p className="kicker">GAME OVER • EMPIRE</p>
-    <h1>{winnerNames.length ? <>{winnerNames.join(" and ")}<br/><em>{winnerNames.length > 1 ? "share the world." : "rules the world."}</em></> : <>What an<br/><em>empire.</em></>}</h1>
-    <p className="lede">{view ? `Finished in round ${Math.min(view.round, view.roundCap)} of ${view.roundCap}.` : "The host ended the game."}</p>
+    <h1>{winnerNames.length ? `${winnerNames.join(" and ")} ${winnerNames.length > 1 ? "win" : "wins"}` : "Results"}</h1>
+    <p className="lede">{view ? `Round ${Math.min(view.round, view.roundCap)} of ${view.roundCap}` : "Ended by the host"}</p>
     <div className="board">{ranked.map((player, index) => {
       const score = view?.scores[player.id];
       const owned = Object.entries(claimLog.reduce<Record<string, string>>((map, entry) => ({ ...map, [entry.code]: entry.playerId }), {}))
@@ -150,6 +148,6 @@ export function EmpireResults({ view, players, playerId, claimLog, colorOf, onLe
       </article>;
     })}</div>
     <ResultsReplay claimLog={claimLog} players={players} youId={playerId}/>
-    <button className="primary" onClick={onLeave}>Back to game lobby ↗</button>
+    <button className="primary" onClick={onLeave}>Back to lobby</button>
   </div>;
 }

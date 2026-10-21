@@ -46,3 +46,15 @@ The environment variable names are listed in .env.example. Do not commit real cr
 - At the selected game's time limit, all players’ lists and the leaderboard unlock.
 
 Country Sprint uses UN member states, plus the Holy See, Palestine, Taiwan, and Kosovo, with common English aliases. Champion Sprint uses the English League of Legends roster from Riot Data Dragon version 16.18.1. Overwatch Hero Sprint uses Blizzard's English live hero roster as of October 2, 2026. Both game rosters accept common punctuation, accent, and spacing variants.
+
+## Writing UI text
+
+Keep a line only if it tells the player something they need at that moment. If deleting it loses no information, delete it. Prefer deleting to rewriting; when text is needed, make it short, plain and specific. Show state in-game (whose turn, the card, time, scores) and put rules in one place per mode: the mode picker and lobby. The earlier audit is in `docs/copy-audit.md`.
+
+| Don't | Do |
+|---|---|
+| Slogan headline: "Pick a game. Call your crew." | Nothing, or a plain title: "Country Sprint" |
+| Intro that repeats the screen: "Type an answer and press enter." | Delete it; the input and the Claim button already say so |
+| Flourish: "Your move." / "What a showing." / "Smith rules the world." | "Your turn" / "Results" / "Smith wins" |
+| Fake chrome: "✳ BRAN GAME • FRIEND ROOM", footer taglines, decorative ◉ ↗ ↵ | Leave out; keep the one logo in the top bar |
+| Rules repeated in the lobby, sidebar and buttons | One short rules line per mode, in the mode picker and lobby |

@@ -76,11 +76,11 @@ test("the chosen mode is sent when creating a room and shown in the room lobby",
       players: [{ id: "p1", name: "Host", host: true }]
     }), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
-  await act(async () => { button("Create Country Sprint room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  await act(async () => { button("Create room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal(sent[0].mode, "turns");
   assert.equal(sent[0].gameId, "countries");
-  assert.match(doc.body.textContent ?? "", /ROOM READY/);
-  assert.match(doc.body.textContent ?? "", /MODE.*TURN-BASED/);
+  assert.match(doc.body.textContent ?? "", /ABC234.*Copy/);
+  assert.match(doc.body.textContent ?? "", /Turn-based/);
 });
 
 test("a live-mode create sends mode live, and non-country games send no mode", async () => {
@@ -91,10 +91,10 @@ test("a live-mode create sends mode live, and non-country games send no mode", a
     sent.push(JSON.parse(String(init?.body)));
     return new Response(JSON.stringify({ error: "stop here" }), { status: 400, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
-  await act(async () => { button("Create Country Sprint room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  await act(async () => { button("Create room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal(sent[0].mode, "live");
   act(() => button("Champion Sprint", ".game-option")!.click());
-  await act(async () => { button("Create Champion Sprint room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  await act(async () => { button("Create room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal(sent[1].gameId, "champions");
   assert.equal("mode" in sent[1], false);
 });
@@ -122,10 +122,10 @@ test("the turn speed picker only shows for Turn-based, defaults to Standard, and
       players: [{ id: "p1", name: "Host", host: true }]
     }), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
-  await act(async () => { button("Create Country Sprint room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  await act(async () => { button("Create room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal(sent[0].turnSeconds, 10, "the earlier Blitz pick is kept");
-  assert.match(doc.body.textContent ?? "", /TURN-BASED · 10S TURNS/);
-  assert.match(doc.body.textContent ?? "", /10 seconds each/);
+  assert.match(doc.body.textContent ?? "", /Turn-based · 10s turns/);
+  assert.match(doc.body.textContent ?? "", /12 rounds/);
 });
 
 test("live-mode creates send no turn speed", async () => {
@@ -136,7 +136,7 @@ test("live-mode creates send no turn speed", async () => {
     sent.push(JSON.parse(String(init?.body)));
     return new Response(JSON.stringify({ error: "stop here" }), { status: 400, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
-  await act(async () => { button("Create Country Sprint room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  await act(async () => { button("Create room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal("turnSeconds" in sent[0], false);
 });
 
@@ -164,9 +164,9 @@ test("Empire has its own speed picker (Blitz 15 s, Standard 20 s, Relaxed 30 s);
       players: [{ id: "p1", name: "Host", host: true }]
     }), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
-  await act(async () => { button("Create Country Sprint room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  await act(async () => { button("Create room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal(sent[0].mode, "empire");
   assert.equal(sent[0].turnSeconds, 30);
-  assert.match(doc.body.textContent ?? "", /EMPIRE · 30S TURNS/);
-  assert.match(doc.body.textContent ?? "", /within 30 seconds/);
+  assert.match(doc.body.textContent ?? "", /Empire · 30s turns/);
+  assert.match(doc.body.textContent ?? "", /claim, steal or fortify/);
 });

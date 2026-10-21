@@ -37,16 +37,15 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
   useEffect(() => { if (mine) input.current?.focus(); }, [mine, turn.number]);
 
   return <div className="game"><section>
-    <div className="game-head"><div><p className="kicker">COUNTRY SPRINT　<span className="live">● TURN-BASED</span>　<span className="speed-tag">{Math.round(turn.turnMs / 1000)}S TURNS</span></p><h1>Take your<br/><em>turn.</em></h1></div></div>
     <div className={mine ? "turn-banner mine" : "turn-banner"} style={{ borderLeftColor: current ? colorOf(current.id) : undefined }}>
-      <div><small>{mine ? "YOUR TURN" : "NOW PLAYING"}</small><b>{mine ? "It’s your turn" : `${current?.name ?? "Another player"}’s turn`}</b></div>
+      <div><b>{mine ? "Your turn" : `${current?.name ?? "Another player"}’s turn`}</b></div>
       <div className={seconds <= 5 ? "turn-clock urgent" : "turn-clock"} aria-label="Seconds left this turn">{String(seconds).padStart(2, "0")}s</div>
     </div>
-    <p className="round-line">ROUND {turn.round} OF {turn.totalRounds}{turn.doubleRound && <span className="double-banner">DOUBLE POINTS · CLAIMS WORTH 2</span>}</p>
-    <div className="turn-card"><small>{mine ? "YOUR CARD" : `${current?.name?.toUpperCase() ?? "THEIR"} CARD`}</small><b>{turn.cardLabel ?? "No card"}</b></div>
+    <p className="round-line">ROUND {turn.round} OF {turn.totalRounds}{turn.doubleRound && <span className="double-banner">Double points</span>}</p>
+    <div className="turn-card"><small>CARD</small><b>{turn.cardLabel ?? "No card"}</b></div>
     <form className="guess-form" onSubmit={onSubmit}>
-      <input ref={input} className="field" placeholder={mine ? "Name a country that fits the card…" : `Waiting for ${current?.name ?? "the other player"}…`} value={entry} onChange={(event) => onEntry(event.target.value)} disabled={!mine || busy || seconds <= 0}/>
-      <button className="primary" disabled={!mine || !entry.trim() || busy || seconds <= 0}>Claim ↵</button>
+      <input ref={input} className="field" placeholder="Country name" aria-label="Country name" value={entry} onChange={(event) => onEntry(event.target.value)} disabled={!mine || busy || seconds <= 0}/>
+      <button className="primary" disabled={!mine || !entry.trim() || busy || seconds <= 0}>Claim</button>
     </form>
     <div className="turn-actions"><button type="button" className="quiet" disabled={!mine || busy || seconds <= 0} onClick={onPass}>Pass</button></div>
     {notice && <p className="notice">{notice}</p>}
@@ -55,14 +54,13 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
       return <div className={player.id === turn.currentPlayerId ? "score-row active" : "score-row"} key={player.id} style={{ borderLeftColor: colorOf(player.id) }}>
         <b>{player.name}{player.id === playerId ? " (you)" : ""}</b><strong>{score?.total ?? 0}</strong>
         <small>{score?.points ?? 0} POINTS · LARGEST GROUP {score?.territory ?? 0}</small>
-        {score?.bonuses.length ? <small>{score.bonuses.map((bonus) => <span className="bonus-chip" key={bonus.label}>+{bonus.points} {bonus.label}</span>)}</small> : <small>NO BONUSES YET</small>}
+        {score?.bonuses.length ? <small>{score.bonuses.map((bonus) => <span className="bonus-chip" key={bonus.label}>+{bonus.points} {bonus.label}</span>)}</small> : null}
       </div>;
     })}</div>
     <WorldMap claims={countryClaims} players={players} youId={playerId} emphasis={largestGroups}/>
   </section>
-  <aside><div className="aside-title">THE ROOM <b>{players.length}/3</b></div>
+  <aside><div className="aside-title">PLAYERS <b>{players.length}/3</b></div>
     {players.map((player) => <div className="mini" key={player.id}><span style={{ background: colorOf(player.id), color: "#fff" }}>{player.name.slice(0, 1).toUpperCase()}</span><b>{player.name}{player.id === playerId ? " (you)" : ""}</b><i>{scores[player.id]?.total ?? 0}</i></div>)}
-    <p className="aside-note">✳ Owning a whole small region pays +1 to +4 by size, and the largest linked territory pays +2. Thick outlines on the map mark each player’s largest group. The last three rounds pay double.</p>
     {me?.host && <button className="quiet end-round" disabled={busy} onClick={onEnd}>End game &amp; reveal</button>}
   </aside></div>;
 }
