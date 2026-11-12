@@ -132,6 +132,11 @@ test("a host can start a two-player room from the lobby", async () => {
   assert.ok(calls.some((call) => call.body?.action === "start"));
   assert.match(doc.body.textContent ?? "", /Country Sprint.*TIME LEFT/);
   assert.ok(doc.querySelector(".world-map"), "country rounds should show the shared live map");
+  const map = doc.querySelector(".world-map")!;
+  for (const later of [".guess-form", ".claim-lists", "aside"]) assert.ok(map.compareDocumentPosition(doc.querySelector(later)!) & 4, `the map comes before ${later}`);
+  assert.equal(doc.querySelectorAll(".continent-chip").length, 6, "one chip per continent");
+  assert.match(doc.querySelector(".continent-chips")!.textContent ?? "", /Africa \d+ left/);
+  assert.ok(doc.querySelector(".map-zoom-controls"), "the live map can be zoomed");
 
   doc.defaultView!.confirm = () => true;
   const stopButton = [...doc.querySelectorAll("button")].find((button) => button.textContent?.includes("End round & reveal"));

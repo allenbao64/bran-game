@@ -112,3 +112,21 @@ export function countryFacts(code: string) {
 export function allCountryFacts() {
   return [...factsByCode.values()];
 }
+
+export type ContinentCount = { name: string; total: number; left: number };
+/** The Americas are split in two so the chips stay a useful size. */
+export const CONTINENTS = ["Africa", "Asia", "Europe", "North America", "South America", "Oceania"];
+function continentOf(facts: CountryFacts) {
+  return facts.region === "Americas" ? (facts.subregion === "South America" ? "South America" : "North America") : facts.region;
+}
+/** How many countries in each continent nobody has claimed yet. `claimed` is any code-keyed record (e.g. the claims map). */
+export function continentCounts(claimed: Record<string, unknown>): ContinentCount[] {
+  const counts = new Map(CONTINENTS.map((name) => [name, { name, total: 0, left: 0 }]));
+  for (const facts of allCountryFacts()) {
+    const entry = counts.get(continentOf(facts));
+    if (!entry) continue;
+    entry.total++;
+    if (!(facts.code in claimed)) entry.left++;
+  }
+  return [...counts.values()].filter((entry) => entry.total > 0);
+}
