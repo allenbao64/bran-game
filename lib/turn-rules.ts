@@ -1,7 +1,11 @@
 /** Version 2 (simple turns) rules for Country Sprint: criteria cards, points, bonuses and awards. */
 import { allCountryFacts, countryFacts } from "@/lib/countries";
 
-export const V2_ROUNDS = 12;
+/** Host-selectable round counts. Rooms saved before the choice existed ran 12 rounds, so they keep that. */
+export const TURN_ROUND_OPTIONS = [15, 20, 30] as const;
+export const DEFAULT_TURN_ROUNDS = 20;
+export const LEGACY_TURN_ROUNDS = 12;
+export const isTurnRounds = (value: unknown): value is number => TURN_ROUND_OPTIONS.some((rounds) => rounds === value);
 export const DOUBLE_POINT_ROUNDS = 3;
 export const MIN_FITTING_COUNTRIES = 3;
 export const SMALL_REGION_MAX = 6;
@@ -112,10 +116,10 @@ export function unclaimedCodes(claims: Pick<Claim, "code">[]) {
 }
 
 /** 1 point per claim, 2 during the last three rounds. */
-export function pointsForRound(round: number, totalRounds = V2_ROUNDS) {
+export function pointsForRound(round: number, totalRounds: number) {
   return round > totalRounds - DOUBLE_POINT_ROUNDS ? 2 : 1;
 }
-export const isDoubleRound = (round: number, totalRounds = V2_ROUNDS) => pointsForRound(round, totalRounds) === 2;
+export const isDoubleRound = (round: number, totalRounds: number) => pointsForRound(round, totalRounds) === 2;
 
 /** Subregions with six or fewer countries in the game list. */
 export function smallRegions(): { name: string; codes: string[] }[] {
@@ -191,7 +195,7 @@ export function computeScores(playerIds: string[], claims: Claim[]): Record<stri
 
 export type Award = { id: "first" | "territory" | "comeback"; title: string; playerId: string; detail: string };
 
-export function computeAwards(playerIds: string[], claims: Claim[], totalRounds = V2_ROUNDS): Award[] {
+export function computeAwards(playerIds: string[], claims: Claim[], totalRounds: number): Award[] {
   const awards: Award[] = [];
   if (claims.length) {
     const first = claims[0];

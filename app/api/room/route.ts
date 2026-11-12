@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
 import { gameConfig, isGameId, type GameId } from "@/lib/games";
-import { DEFAULT_TURN_SECONDS, isTurnSeconds } from "@/lib/turn-rules";
+import { DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, isTurnRounds, isTurnSeconds, LEGACY_TURN_ROUNDS } from "@/lib/turn-rules";
 import { DEFAULT_EMPIRE_TURN_SECONDS, isEmpireTurnSeconds } from "@/lib/empire/types";
 import {
   applyPass, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, runTurnAction, turnSnapshot, type TurnRoom
@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 
 type Player = { id: string; token: string; name: string; host: boolean };
 type GameMode = "live" | "turns" | "empire";
-type Room = { code: string; gameId?: GameId; mode?: GameMode; turnSeconds?: number; status: "waiting" | "playing" | "ended"; createdAt: number; startedAt: number | null; players: Player[] };
+type Room = { code: string; gameId?: GameId; mode?: GameMode; turnSeconds?: number; rounds?: number; status: "waiting" | "playing" | "ended"; createdAt: number; startedAt: number | null; players: Player[] };
 const roomKey = (code: string) => `bran:room:${code}`;
 const cleanPlayer = (p: Player) => ({ id: p.id, name: p.name, host: p.host });
 const publicPlayers = (players: Player[]) => players.map(cleanPlayer);
@@ -48,15 +48,17 @@ export async function POST(request: NextRequest) {
       if (mode === "empire" && body.turnSeconds !== undefined && !isEmpireTurnSeconds(body.turnSeconds)) return error("Choose an Empire turn speed of 15, 20 or 30 seconds.");
       const turnSeconds = mode === "turns" ? (body.turnSeconds ?? DEFAULT_TURN_SECONDS) as number
         : mode === "empire" ? (body.turnSeconds ?? DEFAULT_EMPIRE_TURN_SECONDS) as number : undefined;
+      if (body.rounds !== undefined && mode === "turns" && !isTurnRounds(body.rounds)) return error("Choose 15, 20 or 30 rounds.");
+      const rounds = mode === "turns" ? (body.rounds ?? DEFAULT_TURN_ROUNDS) as number : undefined;
       const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
       for (let attempt = 0; attempt < 8; attempt++) {
         const code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
         const token = randomUUID() + randomUUID();
         const player: Player = { id: randomUUID(), token, name, host: true };
-        const room: Room = { code, gameId, mode, ...(turnSeconds ? { turnSeconds } : {}), status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
+        const room: Room = { code, gameId, mode, ...(turnSeconds ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
         const created = await redis.set(roomKey(code), room, { ex: ROOM_TTL_SECONDS, nx: true });
         if (created) return NextResponse.json({
-          code, gameId, mode, ...(turnSeconds ? { turnSeconds } : {}), token, playerId: player.id, status: room.status,
+          code, gameId, mode, ...(turnSeconds ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), token, playerId: player.id, status: room.status,
           startedAt: room.startedAt, players: publicPlayers(room.players)
         });
       }
@@ -100,12 +102,12 @@ export async function POST(request: NextRequest) {
       `;
       const startedAt = Date.now();
       const existing = await redis.get<Room>(key);
-      const turnJson = existing && isTurnsRoom(existing) ? JSON.stringify(initialTurnState(["pending"], startedAt, existing.turnSeconds)) : "";
+      const turnJson = existing && isTurnsRoom(existing) ? JSON.stringify(initialTurnState(["pending"], startedAt, existing.turnSeconds, existing.rounds ?? LEGACY_TURN_ROUNDS)) : "";
       const result = await redis.eval(script, [key], [body.token, String(startedAt), String(ROOM_TTL_SECONDS), turnJson]);
       const started = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> }>(result);
       if (started.error) return error(started.error);
       if (!started.ok) return error("Could not start this round. Please try again.");
-      return NextResponse.json({ code, gameId: started.gameId ?? "countries", mode: started.mode ?? "live", ...(existing?.turnSeconds && (isTurnsRoom(existing) || isEmpireRoom(existing)) ? { turnSeconds: existing.turnSeconds } : {}), status: started.status, startedAt: started.startedAt, players: started.players });
+      return NextResponse.json({ code, gameId: started.gameId ?? "countries", mode: started.mode ?? "live", ...(existing?.turnSeconds && (isTurnsRoom(existing) || isEmpireRoom(existing)) ? { turnSeconds: existing.turnSeconds } : {}), ...(existing && isTurnsRoom(existing) ? { rounds: existing.rounds ?? LEGACY_TURN_ROUNDS } : {}), status: started.status, startedAt: started.startedAt, players: started.players });
     }
 
     if (body.action === "end") {
@@ -158,13 +160,13 @@ export async function POST(request: NextRequest) {
       for _, player in ipairs(room.players) do
         table.insert(players, {id=player.id, name=player.name, host=player.host})
       end
-      return cjson.encode({ok=true, gameId=room.gameId or 'countries', mode=room.mode or 'live', turnSeconds=room.turnSeconds, status=room.status, startedAt=room.startedAt, players=players})
+      return cjson.encode({ok=true, gameId=room.gameId or 'countries', mode=room.mode or 'live', turnSeconds=room.turnSeconds, rounds=room.rounds, status=room.status, startedAt=room.startedAt, players=players})
     `;
     const result = await redis.eval(script, [key], [playerId, token, name, String(ROOM_TTL_SECONDS)]);
-    const joined = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; turnSeconds?: number; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> }>(result);
+    const joined = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; turnSeconds?: number; rounds?: number; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> }>(result);
     if (joined.error) return error(joined.error);
     if (!joined.ok) return error("Could not join that room. Please try again.");
-    return NextResponse.json({ code, gameId: joined.gameId ?? "countries", mode: joined.mode ?? "live", ...(joined.turnSeconds ? { turnSeconds: joined.turnSeconds } : {}), token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
+    return NextResponse.json({ code, gameId: joined.gameId ?? "countries", mode: joined.mode ?? "live", ...(joined.turnSeconds ? { turnSeconds: joined.turnSeconds } : {}), ...(joined.mode === "turns" ? { rounds: joined.rounds ?? LEGACY_TURN_ROUNDS } : {}), token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
   } catch (cause) {
     console.error("Room POST failed:", cause);
     return error("The room service is unavailable. Try again in a moment.", 503);
@@ -187,7 +189,7 @@ export async function GET(request: NextRequest) {
       const empireRoom = await loadSyncedEmpireRoom(redis, roomKey(code), now);
       if (!empireRoom) return error("Room not found. It may have expired.", 404);
       const mine = empireRoom.players.find((player) => player.token === token)!;
-      const view = empireSnapshot(empireRoom, now);
+      const view = empireSnapshot(empireRoom, now, mine.id);
       return NextResponse.json({
         code: empireRoom.code, gameId: "countries", mode: "empire", status: empireRoom.status, startedAt: empireRoom.startedAt,
         players: publicPlayers(empireRoom.players as Player[]), playerId: mine.id, myGuesses: [],
@@ -233,7 +235,7 @@ export async function GET(request: NextRequest) {
       lockedCountryCodes, countryClaims
     };
     response.mode = room.mode ?? "live";
-    if (isTurnsRoom(room)) response.turnSeconds = room.turnSeconds ?? DEFAULT_TURN_SECONDS;
+    if (isTurnsRoom(room)) { response.turnSeconds = room.turnSeconds ?? DEFAULT_TURN_SECONDS; response.rounds = room.rounds ?? LEGACY_TURN_ROUNDS; }
     if (isEmpireRoom(room)) response.turnSeconds = room.turnSeconds ?? DEFAULT_EMPIRE_TURN_SECONDS;
     if (room.status === "ended") {
       const results = await Promise.all(room.players.map(async (player) => {

@@ -3,6 +3,7 @@
 import React, { FormEvent, useEffect, useState } from "react";
 import { WorldMap } from "@/app/world-map";
 import { ResultsReplay } from "@/app/replay";
+import { TurnBanner, useTurnFocus, useYourTurnTitle } from "@/app/turn-banner";
 import type { ClaimLogEntry } from "@/app/turns-game";
 import { countryByCode, resolveCountry } from "@/lib/countries";
 
@@ -19,6 +20,7 @@ export type EmpireView = {
   players: { id: string; capital: string; capitalName: string; stealTokens: number; forts: string[]; fortNames: string[] }[];
   scores: Record<string, EmpireScore>; empireHolder: string | null; protected: string[];
   finished: boolean; winnerIds: string[];
+  steal?: { canSteal: boolean; targets: string[]; from: string[]; reason: string | null } | null;
   log: { kind: string; playerId: string; code?: string; name: string | null; from?: string; points?: number; round: number }[];
 };
 export type EmpireAction =
@@ -56,6 +58,12 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
   const nameOf = (id?: string) => players.find((player) => player.id === id)?.name ?? "Someone";
   const me = view.players.find((player) => player.id === playerId);
   const host = players.find((player) => player.id === playerId)?.host;
+  const input = useTurnFocus(mine, view.turnStartedAt);
+  useYourTurnTitle(mine);
+  const current = players.find((player) => player.id === view.currentPlayerId);
+  const currentColor = current ? colorOf(current.id) : "#9aa29b";
+  const steal = view.steal;
+  const stealLine = !steal ? null : steal.canSteal ? `You can steal from ${steal.from.map((id) => nameOf(id)).join(" and ")}` : `No steal: ${steal.reason}`;
 
   useEffect(() => {
     const tick = () => setSeconds(Math.max(0, Math.ceil((view.turnStartedAt + view.turnMs - (Date.now() + skewMs)) / 1000)));
@@ -83,10 +91,9 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
 
   return <div className="game empire">
     <section>
-      <div className="game-head"><div>
-        <h1>{mine ? "Your turn" : `${nameOf(view.currentPlayerId ?? undefined)}’s turn`}</h1>
-        <p className="round-line">ROUND {view.round} OF {view.roundCap}</p>
-      </div><div className={seconds <= 5 ? "timer urgent" : "timer"}><small>TURN</small><b>0:{String(seconds).padStart(2, "0")}</b></div></div>
+      <TurnBanner mine={mine} name={current?.name ?? "another player"} color={currentColor} seconds={seconds}/>
+      <p className="round-line">ROUND {view.round} OF {view.roundCap}</p>
+      {stealLine && <p className={steal?.canSteal ? "steal-status can" : "steal-status"} role="status">{stealLine}</p>}
       {view.event && <p className="empire-event">Event: {view.event.label}</p>}
 
       <div className="guess-title">{mine ? "YOUR CARDS" : `${nameOf(view.currentPlayerId ?? undefined).toUpperCase()}’S CARDS`}</div>
@@ -94,8 +101,9 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
         className={`empire-card${view.chosen === index ? " selected" : ""}`} disabled={!mine || busy}
         aria-pressed={view.chosen === index} onClick={() => void onAction({ type: "pick", index })}>{card.label}</button>)}</div>
 
+      {!mine && <div className="empire-actions"><input className="field turn-input" style={{ "--pc": currentColor } as React.CSSProperties} placeholder={`Waiting for ${current?.name ?? "the other player"}…`} aria-label="Country name" disabled/></div>}
       {mine && <form className="empire-actions" onSubmit={submit}>
-        <input className="field" placeholder="Country name" aria-label="Country name" value={country} onChange={(event) => setCountry(event.target.value)} disabled={busy}/>
+        <input ref={input} className="field turn-input active" style={{ "--pc": currentColor } as React.CSSProperties} placeholder="Country name" aria-label="Country name" value={country} onChange={(event) => setCountry(event.target.value)} disabled={busy}/>
         {owner && owner !== playerId && <input className="field" placeholder={`Capital of ${resolved?.name}`} aria-label="Capital" value={capital} onChange={(event) => setCapital(event.target.value)} disabled={busy}/>}
         <div className="empire-buttons">
           <button className="primary" disabled={busy || !country.trim() || !picked}>{owner && owner !== playerId ? "Steal" : "Claim"}</button>
@@ -103,10 +111,9 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
           <button type="button" className="quiet" disabled={busy} onClick={() => void run({ type: "pass" })}>Pass</button>
         </div>
         {!picked ? <p className="empire-hint">Pick a card first.</p> : owner && owner !== playerId ? <p className="empire-hint">{`${resolved?.name} belongs to ${nameOf(owner)}. Name its capital to steal it (${me?.stealTokens ?? 0} steal${me?.stealTokens === 1 ? "" : "s"} left).`}</p> : null}
-        <p className="empire-hint">Steals: the country must border yours and its owner must have at least your score at the start of the round. Capitals, forts and full region sets are safe.</p>
       </form>}
       {notice && <p className="notice">{notice}</p>}
-      <WorldMap claims={countryClaims} players={players} youId={playerId} emphasis={view.largestGroups}/>
+      <WorldMap claims={countryClaims} players={players} youId={playerId} emphasis={view.largestGroups} targets={steal?.canSteal ? steal.targets : undefined}/>
     </section>
     <aside>
       <div className="aside-title">SCORES <b>{view.winPoints} TO WIN</b></div>

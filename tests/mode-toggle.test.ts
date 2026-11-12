@@ -103,7 +103,7 @@ test("the turn speed picker only shows for Turn-based, defaults to Standard, and
   mount();
   assert.equal(doc.querySelectorAll(".speed-option").length, 0, "live race has no speed");
   act(() => button("Turn-based", ".mode-option")!.click());
-  assert.equal(doc.querySelectorAll(".speed-option").length, 3);
+  assert.equal(doc.querySelectorAll(".speed-option").length, 6, "three speeds and three round counts");
   assert.equal(button("Standard", ".speed-option")!.getAttribute("aria-pressed"), "true");
   assert.match(button("Blitz", ".speed-option")!.textContent ?? "", /10 SECONDS/);
   assert.match(button("Relaxed", ".speed-option")!.textContent ?? "", /25 SECONDS/);
@@ -113,19 +113,23 @@ test("the turn speed picker only shows for Turn-based, defaults to Standard, and
   act(() => button("Live race", ".mode-option")!.click());
   assert.equal(doc.querySelectorAll(".speed-option").length, 0);
   act(() => button("Turn-based", ".mode-option")!.click());
+  assert.equal(button("20", ".speed-option")!.getAttribute("aria-pressed"), "true", "20 rounds is the default");
+  act(() => button("30", ".speed-option")!.click());
+  assert.equal(button("30", ".speed-option")!.getAttribute("aria-pressed"), "true");
   type("name", "Host");
   const sent: Record<string, unknown>[] = [];
   globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
     sent.push(JSON.parse(String(init?.body)));
     return new Response(JSON.stringify({
-      code: "ABC234", gameId: "countries", mode: "turns", turnSeconds: 10, token: "a".repeat(64), playerId: "p1", status: "waiting", startedAt: null,
+      code: "ABC234", gameId: "countries", mode: "turns", turnSeconds: 10, rounds: 30, token: "a".repeat(64), playerId: "p1", status: "waiting", startedAt: null,
       players: [{ id: "p1", name: "Host", host: true }]
     }), { status: 200, headers: { "content-type": "application/json" } });
   }) as typeof fetch;
   await act(async () => { button("Create room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal(sent[0].turnSeconds, 10, "the earlier Blitz pick is kept");
+  assert.equal(sent[0].rounds, 30, "the round count is sent");
   assert.match(doc.body.textContent ?? "", /Turn-based · 10s turns/);
-  assert.match(doc.body.textContent ?? "", /12 rounds/);
+  assert.match(doc.body.textContent ?? "", /30 rounds/);
 });
 
 test("live-mode creates send no turn speed", async () => {

@@ -164,18 +164,23 @@ test("a turns game shows the banner, round counter, card, scoreboard and only le
   assert.match(text(), /ROUND 10 OF 12/);
   assert.match(text(), /Double points/);
   assert.match(text(), /Landlocked country/);
-  assert.match(text(), /Brian’s turn/);
+  assert.match(text(), /Waiting for Brian…/);
   assert.match(text(), /Largest territory \(3 linked\)/, "current bonuses show live");
   const field = () => doc.querySelector<HTMLInputElement>(".guess-form input")!;
   const passButton = () => [...doc.querySelectorAll("button")].find((button) => button.textContent === "Pass")!;
   assert.equal(field().disabled, true, "input is locked on someone else's turn");
+  assert.equal(field().placeholder, "Waiting for Brian…");
+  assert.notEqual(doc.title, "Your turn · Atlas Sprint");
   assert.equal(passButton().disabled, true);
   assert.ok(doc.querySelector(".world-map"));
 
   current = "p1";
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1000)); });
-  assert.match(text(), /Your turn/);
+  assert.match(text(), /YOUR TURN/);
   assert.equal(field().disabled, false, "polling every 0.8s unlocks the input on your turn");
+  assert.equal(doc.title, "Your turn · Atlas Sprint", "the tab title says it is your turn");
+  assert.equal(doc.activeElement, field(), "the input is focused on your turn");
+  assert.match(field().className, /active/);
   await act(async () => { passButton().click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.ok(calls.some((call) => call.action === "pass"));
 });

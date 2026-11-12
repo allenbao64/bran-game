@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { actions } from "@/lib/empire/actions";
+import { actions, stealStatus } from "@/lib/empire/actions";
 import {
   EMPIRE_RULES,
   type ActionError,
@@ -742,4 +742,44 @@ test("timeouts follow the snake order across a round boundary", () => {
   const duoAfter = actions.advanceTimeouts(duo, 1000 + 3 * EMPIRE_RULES.turnMs, deps);
   assert.deepEqual(duoAfter.log.map((e) => [e.playerId, e.round]), [[x, 1], [y, 1], [y, 2]]);
   assert.equal(duoAfter.players[duoAfter.seat].id, x);
+});
+
+test("stealStatus: a player level with or behind the owner, bordering and holding a token can steal", () => {
+  const { deps } = fakeDeps();
+  const status = stealStatus(game(STEAL_BOARD, { chosen: 0 }), "p1", deps);
+  assert.equal(status.canSteal, true);
+  assert.equal(status.reason, null);
+  assert.deepEqual(status.targets, ["E"], "only E borders p1 and is not p2's capital");
+  assert.deepEqual(status.from, ["p2"]);
+});
+
+test("stealStatus gives one plain reason for each way of being blocked", () => {
+  const { deps } = fakeDeps();
+  const reason = (state: EmpireState, id = "p1") => { const s = stealStatus(state, id, deps); assert.equal(s.canSteal, false); assert.deepEqual(s.targets, []); return s.reason; };
+  assert.equal(reason(game(STEAL_BOARD), "p2"), "not your turn");
+  assert.equal(reason(game(STEAL_BOARD, { finished: true })), "the game is over");
+  assert.equal(reason(game(STEAL_BOARD, { event: { kind: "ceasefire" } })), "a ceasefire is on this round");
+  assert.equal(reason(game(STEAL_BOARD, { tokens: [0, 2] })), "you have no steal tokens left");
+  assert.equal(reason(game({ A: "p1", B: "p1", C: "p1", D: "p1", E: "p2", H: "p2" })), "you were ahead of everyone at the start of the round");
+  assert.equal(reason(game({ A: "p1", B: "p1", E: "p2", F: "p2", G: "p2", H: "p2" })), "none of their countries border yours");
+  assert.equal(reason(game(STEAL_BOARD, { forts: [[], ["E"]] })), "their bordering countries are protected");
+  assert.equal(stealStatus(game(STEAL_BOARD, { tokens: [0, 2], event: { kind: "freeSteals" } }), "p1", deps).canSteal, true, "free steals need no token");
+});
+
+test("stealStatus agrees with the steal action for every country, behind or level at the round start", () => {
+  const { deps } = fakeDeps();
+  const boards: Record<string, string>[] = [STEAL_BOARD, { A: "p1", B: "p1", E: "p2", F: "p2", G: "p2", H: "p2" }, { A: "p1", B: "p1", D: "p1", C: "p2", E: "p2", F: "p2", G: "p2", H: "p2" }];
+  for (const owners of boards) {
+    for (const start of [undefined, [2, 2], [4, 2], [1, 3]] as ([number, number] | undefined)[]) {
+      for (const forts of [[[], []], [[], ["E"]]] as [string[], string[]][]) {
+        const state = game(owners, { chosen: 0, start, forts });
+        const status = stealStatus(state, "p1", deps);
+        for (const code of CODES) {
+          const result = actions.applyAction(state, "p1", { type: "steal", code, capital: "city-" + code }, 2000, deps);
+          const allowed = !("error" in result);
+          assert.equal(status.targets.includes(code), allowed, `${code} on ${JSON.stringify(owners)} start ${start} forts ${JSON.stringify(forts)}`);
+        }
+      }
+    }
+  }
 });

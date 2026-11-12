@@ -10,7 +10,7 @@ import { WorldMap } from "@/app/world-map";
 import { TurnsGame, type ClaimLogEntry, type ScoreView, type TurnView } from "@/app/turns-game";
 import { ResultsReplay } from "@/app/replay";
 import { EmpireGame, EmpireResults, type EmpireAction, type EmpireView } from "@/app/empire-game";
-import { DEFAULT_TURN_SECONDS, TURN_SPEEDS } from "@/lib/turn-rules";
+import { DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, LEGACY_TURN_ROUNDS, TURN_ROUND_OPTIONS, TURN_SPEEDS } from "@/lib/turn-rules";
 import { DEFAULT_EMPIRE_TURN_SECONDS, EMPIRE_TURN_SPEEDS } from "@/lib/empire/types";
 
 type Player = { id: string; name: string; host: boolean };
@@ -18,12 +18,12 @@ type Answer = { code: string; name: string };
 type Result = { playerId: string; name: string; guesses: Answer[]; points?: number; bonuses?: { label: string; points: number }[]; bonusTotal?: number; total?: number };
 type Award = { id: string; title: string; playerId: string; detail: string };
 type Mode = "live" | "turns" | "empire";
-type Room = { code: string; token: string; gameId: GameId; mode: Mode; turnSeconds?: number; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
+type Room = { code: string; token: string; gameId: GameId; mode: Mode; turnSeconds?: number; rounds?: number; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
 type Stage = "home" | "lobby" | "game" | "results";
 const ROOM_KEY = "bran-game-room";
 const MODE_RULES: Record<Mode, string> = {
   live: "Everyone names countries at once for ten minutes.",
-  turns: "12 rounds. Each turn, claim a country that fits your card. Whole regions earn bonuses.",
+  turns: "Each turn, claim a country that fits your card. Whole regions earn bonuses.",
   empire: "Pick a card, then claim, steal or fortify. First to 15 points."
 };
 const BUILD_VERSION = process.env.NEXT_PUBLIC_GAME_VERSION ?? "local";
@@ -56,6 +56,7 @@ export default function Home() {
   const [selectedGame, setSelectedGame] = useState<GameId>("countries");
   const [selectedMode, setSelectedMode] = useState<Mode>("live");
   const [selectedSpeed, setSelectedSpeed] = useState<number>(DEFAULT_TURN_SECONDS);
+  const [selectedRounds, setSelectedRounds] = useState<number>(DEFAULT_TURN_ROUNDS);
   const [selectedEmpireSpeed, setSelectedEmpireSpeed] = useState<number>(DEFAULT_EMPIRE_TURN_SECONDS);
   const [largestGroups, setLargestGroups] = useState<Record<string, string[]>>({});
   const [turn, setTurn] = useState<TurnView | null>(null);
@@ -82,13 +83,13 @@ export default function Home() {
 
   const sync = useCallback(async (code: string, token: string) => {
     const data = await api<{
-      code: string; gameId?: GameId; mode?: Mode; turnSeconds?: number; status: Room["status"]; startedAt: number | null;
+      code: string; gameId?: GameId; mode?: Mode; turnSeconds?: number; rounds?: number; status: Room["status"]; startedAt: number | null;
       players: Player[]; playerId: string; myGuesses: Answer[]; countryClaims?: Record<string, string>; results?: Result[];
       turn?: TurnView; largestGroups?: Record<string, string[]>; empire?: EmpireView | null; scores?: Record<string, ScoreView>; claimLog?: ClaimLogEntry[]; awards?: Award[];
     }>(`/api/room?code=${encodeURIComponent(code)}`, { headers: { Authorization: `Bearer ${token}` } });
     const gameId = data.gameId ?? "countries";
     const mode: Mode = data.mode === "turns" || data.mode === "empire" ? data.mode : "live";
-    setRoom({ code: data.code, token, gameId, mode, turnSeconds: data.turnSeconds, status: data.status, startedAt: data.startedAt, players: data.players });
+    setRoom({ code: data.code, token, gameId, mode, turnSeconds: data.turnSeconds, rounds: data.rounds, status: data.status, startedAt: data.startedAt, players: data.players });
     setSelectedMode(mode); setLargestGroups(data.largestGroups ?? {});
     if (data.turn) { setTurn(data.turn); setSkewMs(data.turn.serverNow - Date.now()); }
     else setTurn(null);
@@ -144,18 +145,18 @@ export default function Home() {
         }
       }
       const data = await api<{
-        code: string; gameId?: GameId; mode?: Mode; turnSeconds?: number; token: string; playerId: string; status: Room["status"];
+        code: string; gameId?: GameId; mode?: Mode; turnSeconds?: number; rounds?: number; token: string; playerId: string; status: Room["status"];
         startedAt: number | null; players: Player[];
       }>("/api/room", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, name: name.trim(), code, ...(action === "create" ? { gameId: selectedGame, ...(selectedGame === "countries" ? { mode: selectedMode, ...(selectedMode === "turns" ? { turnSeconds: selectedSpeed } : selectedMode === "empire" ? { turnSeconds: selectedEmpireSpeed } : {}) } : {}) } : {}) })
+        body: JSON.stringify({ action, name: name.trim(), code, ...(action === "create" ? { gameId: selectedGame, ...(selectedGame === "countries" ? { mode: selectedMode, ...(selectedMode === "turns" ? { turnSeconds: selectedSpeed, rounds: selectedRounds } : selectedMode === "empire" ? { turnSeconds: selectedEmpireSpeed } : {}) } : {}) } : {}) })
       });
       const gameId = data.gameId ?? "countries";
       const session = { ...data, name: name.trim() };
       localStorage.setItem(ROOM_KEY, JSON.stringify(session));
       setJoinCode(data.code);
       const mode: Mode = data.mode === "turns" || data.mode === "empire" ? data.mode : "live";
-      const nextRoom: Room = { code: data.code, token: data.token, gameId, mode, turnSeconds: data.turnSeconds, status: data.status, startedAt: data.startedAt, players: data.players };
+      const nextRoom: Room = { code: data.code, token: data.token, gameId, mode, turnSeconds: data.turnSeconds, rounds: data.rounds, status: data.status, startedAt: data.startedAt, players: data.players };
       setRoom(nextRoom); setSelectedGame(gameId); setSelectedMode(mode); setTurn(null); setLargestGroups({}); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setPlayers(data.players); setPlayerId(data.playerId); setGuesses([]); setResults([]); setCountryClaims({});
       setStage(data.status === "playing" ? "game" : "lobby");
     } catch (error) { setNotice(errorText(error)); }
@@ -283,13 +284,15 @@ export default function Home() {
           <button type="button" className={`mode-option${selectedMode === "empire" ? " selected" : ""}`} aria-pressed={selectedMode === "empire"} onClick={() => setSelectedMode("empire")}><b>Empire</b><small>{MODE_RULES.empire}</small></button>
         </div>{(selectedMode === "turns" || selectedMode === "empire") && <div role="group" aria-label="Choose a turn speed"><span className="mode-label">TURN SPEED</span><div className="speed-picker">
           {(selectedMode === "empire" ? EMPIRE_TURN_SPEEDS : TURN_SPEEDS).map((speed) => { const chosen = selectedMode === "empire" ? selectedEmpireSpeed : selectedSpeed; return <button type="button" className={`speed-option${chosen === speed.seconds ? " selected" : ""}`} key={speed.id} aria-pressed={chosen === speed.seconds} onClick={() => selectedMode === "empire" ? setSelectedEmpireSpeed(speed.seconds) : setSelectedSpeed(speed.seconds)}><b>{speed.label}</b><small>{speed.seconds} SECONDS</small></button>; })}
+        </div></div>}{selectedMode === "turns" && <div role="group" aria-label="Choose the number of rounds"><span className="mode-label">ROUNDS</span><div className="speed-picker">
+          {TURN_ROUND_OPTIONS.map((rounds) => <button type="button" className={`speed-option${selectedRounds === rounds ? " selected" : ""}`} key={rounds} aria-pressed={selectedRounds === rounds} onClick={() => setSelectedRounds(rounds)}><b>{rounds}</b><small>ROUNDS</small></button>)}
         </div></div>}</div>}
         <label htmlFor="name">DISPLAY NAME</label><input id="name" className="field" maxLength={18} placeholder="Your name" value={name} onChange={(event) => setName(event.target.value)}/>
         <button className="primary" disabled={!ready || busy} onClick={(event) => void startRoom(event as unknown as FormEvent, "create")}>Create room</button>
         <div className="or">OR</div><form onSubmit={(event) => void startRoom(event, "join")}><label htmlFor="room">ROOM CODE</label><div className="join-row"><input id="room" className="field code" maxLength={6} placeholder="ABC123" value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())}/><button className="join" disabled={!ready || joinCode.trim().length !== 6 || busy}>Join</button></div></form>
         {notice && <p className="notice">{notice}</p>}</div>
     </div>}
-    {stage === "lobby" && room && <div className="panel"><h1>{activeGame.title}</h1>{isCountries && <p className="mode-tag">{modeLabel(room.mode)}{room.mode !== "live" && ` · ${turnSecondsOf(room)}s turns`}</p>}<p className="lede">{isCountries ? modeRules(room.mode) : activeGame.rules}</p><button className="room-code" aria-label={`Copy room code ${room.code}`} onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}<small>Copy</small></button>
+    {stage === "lobby" && room && <div className="panel"><h1>{activeGame.title}</h1>{isCountries && <p className="mode-tag">{modeLabel(room.mode)}{room.mode !== "live" && ` · ${turnSecondsOf(room)}s turns`}{room.mode === "turns" && ` · ${room.rounds ?? LEGACY_TURN_ROUNDS} rounds`}</p>}<p className="lede">{isCountries ? modeRules(room.mode) : activeGame.rules}</p><button className="room-code" aria-label={`Copy room code ${room.code}`} onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}<small>Copy</small></button>
       <div className="roster">{[0,1,2].map((index) => { const player = players[index]; return <div className="player" key={index}><span>0{index + 1}</span>{player && <i className="player-dot" style={{ background: colorOf(player.id) }}/>}<b>{player?.name ?? "Open seat"}</b></div>; })}</div>
       {players.length === 1 && <p className="waiting">Waiting for another player.</p>}{players.length === 2 && <p className="waiting">A third player can still join.</p>}
       {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length < 2 || busy} onClick={() => void startRound()}>Start</button>}
