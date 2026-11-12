@@ -9,7 +9,7 @@ import { countryByCode } from "@/lib/countries";
 import { geo } from "@/lib/empire/geo";
 import { cards } from "@/lib/empire/cards";
 import { scoring, largestEmpireGroups } from "@/lib/empire/scoring";
-import { actions, underdogOf } from "@/lib/empire/actions";
+import { actions, stealStatus, underdogOf } from "@/lib/empire/actions";
 import { EMPIRE_RULES, type ActionError, type EmpireAction, type EmpireDeps, type EmpireState } from "@/lib/empire/types";
 
 export type EmpireRoom = {
@@ -122,8 +122,8 @@ export async function runEmpireAction(
 
 const nameOf = (code: string) => countryByCode(code)?.name ?? code;
 
-/** Everything a client needs to draw an Empire room. Never includes tokens. */
-export function empireSnapshot(room: EmpireRoom, now: number) {
+/** Everything a client needs to draw an Empire room. Never includes tokens. `viewerId` adds the viewer-specific `steal` status. */
+export function empireSnapshot(room: EmpireRoom, now: number, viewerId?: string) {
   const empire = room.empire;
   if (!empire) return { empire: null, countryClaims: {}, claimLog: [] };
   const { scores } = scoring.scoreEmpire(empire, geo);
@@ -137,6 +137,7 @@ export function empireSnapshot(room: EmpireRoom, now: number) {
   const roundStartTotals = empire.roundStartTotals ?? {};
   return {
     empire: {
+      steal: viewerId ? stealStatus(empire, viewerId, deps()) : null,
       underdogId: empire.finished ? null : underdogOf(empire.players, roundStartTotals), roundStartTotals,
       round: empire.round, roundCap: EMPIRE_RULES.roundCap, winPoints: EMPIRE_RULES.winPoints,
       currentPlayerId: empire.finished ? null : empire.players[empire.seat]?.id ?? null,

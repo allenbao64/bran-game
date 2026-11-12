@@ -27,7 +27,7 @@ test("the Empire game screen shows the turn, the hand, actions for the current p
     view, players, playerId: view.currentPlayerId!, countryClaims: snap.countryClaims, skewMs: 0, notice: "",
     busy: false, onAction: async () => true, onNotice: () => {}, onEnd: () => {}, colorOf
   }));
-  assert.match(html, /Your/);
+  assert.match(html, /YOUR TURN/);
   for (const card of view.hand) assert.ok(html.includes(card.label), card.label);
   assert.match(html, /Pass/);
   assert.match(html, /Ana/);
@@ -43,8 +43,9 @@ test("other players see whose move it is and no action form", () => {
     view, players, playerId: other.id, countryClaims: snap.countryClaims, skewMs: 0, notice: "",
     busy: false, onAction: async () => true, onNotice: () => {}, onEnd: () => {}, colorOf
   }));
-  assert.ok(html.includes(`${players.find((p) => p.id === view.currentPlayerId)!.name}’s`));
-  assert.equal(html.includes("Country name"), false);
+  assert.ok(html.includes(`Waiting for ${players.find((p) => p.id === view.currentPlayerId)!.name}…`));
+  assert.match(html, /<input[^>]*disabled/, "the answer input is disabled while waiting");
+  assert.equal(html.includes("Pass"), false, "no action buttons");
 });
 
 test("the Empire results screen names the winner and breaks down scores", () => {
@@ -85,6 +86,27 @@ test("the Empire screen shows the chosen turn length and outlines each player's 
     view, players, playerId: "a", countryClaims: snap.countryClaims, skewMs: 0, notice: "",
     busy: false, onAction: async () => true, onNotice: () => {}, onEnd: () => {}, colorOf
   }));
-  assert.match(html, /0:30/, "the clock starts from the chosen length");
+  assert.match(html, /30s/, "the clock starts from the chosen length");
   assert.ok((html.match(/map-country[^"]*territory/g) ?? []).length >= 3, "the largest empire gets the thick outline");
+});
+
+test("the snapshot carries a per-viewer steal status that the screen shows, and the map marks targets", () => {
+  const r = room();
+  const empire = r.empire!;
+  const seatId = empire.players[empire.seat].id;
+  const other = empire.players.find((p) => p.id !== seatId)!;
+  assert.equal(empireSnapshot(r, 2000).empire!.steal, null, "no viewer, no status");
+  const mineView = empireSnapshot(r, 2000, seatId).empire!;
+  assert.equal(mineView.steal!.canSteal, false);
+  const otherView = empireSnapshot(r, 2000, other.id).empire!;
+  assert.equal(otherView.steal!.reason, "not your turn");
+
+  const render = (view: typeof mineView, id: string, claims: Record<string, string>) => renderToStaticMarkup(React.createElement(EmpireGame, {
+    view, players, playerId: id, countryClaims: claims, skewMs: 0, notice: "", busy: false, onAction: async () => true, onNotice: () => {}, onEnd: () => {}, colorOf
+  }));
+  assert.match(render(otherView, other.id, r.empire!.owners), /No steal: not your turn/);
+  const can = { ...mineView, steal: { canSteal: true, targets: ["FR", "DE"], from: [other.id], reason: null } };
+  const html = render(can, seatId, r.empire!.owners);
+  assert.match(html, new RegExp(`You can steal from ${players.find((p) => p.id === other.id)!.name}`));
+  assert.equal((html.match(/steal-target/g) ?? []).length >= 2, true, "target countries get the dashed outline class");
 });

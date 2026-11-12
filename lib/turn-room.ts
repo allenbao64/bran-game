@@ -7,7 +7,7 @@ import type { Redis } from "@upstash/redis";
 import { ROOM_TTL_SECONDS } from "@/lib/redis";
 import { countryByCode } from "@/lib/countries";
 import { advanceByTimeouts, createTurnState, currentPlayerId, currentRound, isPlayersTurn, nextTurn, type TurnState } from "@/lib/turns";
-import { cardFits, cardLabel, computeAwards, computeScores, dealCard, DEFAULT_TURN_SECONDS, isDoubleRound, largestGroupsByPlayer, pointsForRound, unclaimedCodes, allCodes, V2_ROUNDS, type Card, type Claim } from "@/lib/turn-rules";
+import { cardFits, cardLabel, computeAwards, computeScores, dealCard, DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, isDoubleRound, largestGroupsByPlayer, pointsForRound, unclaimedCodes, allCodes, type Card, type Claim } from "@/lib/turn-rules";
 
 export type TurnRoom = {
   code: string;
@@ -18,6 +18,8 @@ export type TurnRoom = {
   players: { id: string; token: string; name: string; host: boolean }[];
   /** Turn length picked by the host at creation (turn-based rooms only). */
   turnSeconds?: number;
+  /** Rounds picked by the host at creation (15, 20 or 30). Missing on rooms saved before the choice: those ran 12. */
+  rounds?: number;
   turn?: TurnState<Card>;
   claims?: Claim[];
 };
@@ -49,8 +51,8 @@ export function normalizeTurnRoom<T extends TurnRoom>(room: T): T {
   return room;
 }
 
-export function initialTurnState(playerIds: string[], now: number, turnSeconds = DEFAULT_TURN_SECONDS): TurnState<Card> {
-  return createTurnState(playerIds, now, V2_ROUNDS, dealCard(allCodes(), rng), turnSeconds * 1000);
+export function initialTurnState(playerIds: string[], now: number, turnSeconds = DEFAULT_TURN_SECONDS, rounds = DEFAULT_TURN_ROUNDS): TurnState<Card> {
+  return createTurnState(playerIds, now, rounds, dealCard(allCodes(), rng), turnSeconds * 1000);
 }
 
 const dealFor = (room: TurnRoom) => () => dealCard(unclaimedCodes(room.claims ?? []), rng);

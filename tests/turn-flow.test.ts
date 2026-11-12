@@ -44,6 +44,18 @@ async function turnsGame(players = 2, mode: "turns" | "live" = "turns", extra: R
   assert.equal(started.status, 200);
   return sessions;
 }
+/** A turns room saved before the round count existed: it runs 12 rounds. */
+async function legacyGame(players = 2) {
+  const host = await json(await postRoom({ action: "create", name: "Host", mode: "turns" })) as Session;
+  const sessions = [host];
+  for (const name of ["Brian", "Casey"].slice(0, players - 1)) sessions.push(await json(await postRoom({ action: "join", code: host.code, name })) as Session);
+  const key = `bran:room:${host.code}`;
+  const saved = (await store.get<Record<string, unknown>>(key))!;
+  delete saved.rounds;
+  await store.set(key, saved);
+  assert.equal((await postRoom({ action: "start", code: host.code, token: host.token, name: "Host" })).status, 200);
+  return sessions;
+}
 const whoseTurn = (view: Record<string, any>, sessions: Session[]) => sessions.find((s) => s.playerId === view.turn.currentPlayerId)!;
 /** A country that fits the current card and is still free. */
 function pickFitting(view: Record<string, any>): string {
@@ -70,7 +82,7 @@ test("starting a turns room deals the first card to the first player", async () 
   assert.equal(view.mode, "turns");
   assert.equal(view.turn.currentPlayerId, host.playerId, "players act in join order");
   assert.equal(view.turn.round, 1);
-  assert.equal(view.turn.totalRounds, 12);
+  assert.equal(view.turn.totalRounds, 20, "20 rounds is the default");
   assert.equal(view.turn.doubleRound, false);
   assert.ok(view.turn.card && view.turn.cardLabel);
   assert.equal(view.turn.turnMs, 15000);
@@ -195,7 +207,7 @@ test("the compare-and-set write rejects a stale turn number", async () => {
 });
 
 test("a full game lasts 12 rounds, doubles points in the last three and reports final scores", async () => {
-  const sessions = await turnsGame(2);
+  const sessions = await legacyGame(2);
   let view = await getRoom(sessions[0]);
   for (let turn = 0; turn < 24; turn++) {
     assert.equal(view.status, "playing", `still playing before turn ${turn}`);
@@ -229,7 +241,7 @@ test("a full game lasts 12 rounds, doubles points in the last three and reports 
 });
 
 test("timeouts alone end the game after 12 rounds", async () => {
-  const sessions = await turnsGame(2);
+  const sessions = await legacyGame(2);
   clock += 15_000 * 24 - 1;
   assert.equal((await getRoom(sessions[1])).status, "playing");
   clock += 1;
@@ -293,17 +305,17 @@ test("the host's turn speed is validated, stored, shared with joiners and shown 
 });
 
 test("timeouts follow the chosen speed: Blitz 10s and Relaxed 25s", async () => {
-  const blitz = await turnsGame(2, "turns", { turnSeconds: 10 });
+  const blitz = await turnsGame(2, "turns", { turnSeconds: 10, rounds: 15 });
   clock += 9_999;
   assert.equal((await getRoom(blitz[0])).turn.currentPlayerId, blitz[0].playerId, "10 seconds have not passed yet");
   clock += 1;
   const view = await getRoom(blitz[0]);
   assert.equal(view.turn.currentPlayerId, blitz[1].playerId);
   assert.equal(view.turn.startedAt, 1_800_000_000_000 + 10_000);
-  clock += 10_000 * 23 - 1;
+  clock += 10_000 * 29 - 1;
   assert.equal((await getRoom(blitz[0])).status, "playing");
   clock += 1;
-  assert.equal((await getRoom(blitz[0])).status, "ended", "24 turns of 10s end the game");
+  assert.equal((await getRoom(blitz[0])).status, "ended", "30 turns of 10s end the game");
 
   clock = 1_800_000_000_000;
   const relaxed = await turnsGame(2, "turns", { turnSeconds: 25 });
@@ -324,4 +336,53 @@ test("the snapshot outlines each player's largest connected group", async () => 
   const view = await getRoom(guest);
   assert.deepEqual(view.largestGroups[host.playerId], ["BE", "DE", "FR"]);
   assert.deepEqual(view.largestGroups[guest.playerId], ["ES"]);
+});
+
+test("the host's round count is validated, stored, shared and used to end the game", async () => {
+  const short = await json(await postRoom({ action: "create", name: "Host", mode: "turns", rounds: 15 })) as Session & { rounds: number };
+  assert.equal(short.rounds, 15);
+  assert.equal(((await store.get<Record<string, unknown>>(`bran:room:${short.code}`))!).rounds, 15);
+  assert.equal((await json(await postRoom({ action: "join", code: short.code, name: "Brian" }))).rounds, 15);
+  assert.equal((await getRoom(short)).rounds, 15, "the waiting-room snapshot carries the rounds");
+  const started = await json(await postRoom({ action: "start", code: short.code, token: short.token, name: "Host" }));
+  assert.equal(started.rounds, 15);
+  assert.equal((await getRoom(short)).turn.totalRounds, 15);
+
+  assert.equal((await json(await postRoom({ action: "create", name: "Host", mode: "turns" }))).rounds, 20, "20 is the default");
+  for (const bad of [12, 0, 25, "20", 20.5, null, true]) {
+    assert.equal((await postRoom({ action: "create", name: "Host", mode: "turns", rounds: bad })).status, 400, `rejects ${JSON.stringify(bad)}`);
+  }
+  const live = await json(await postRoom({ action: "create", name: "Host", mode: "live", rounds: 30 }));
+  assert.equal("rounds" in live, false, "live rooms ignore rounds");
+
+  // 15 rounds x 2 players x 15 s: the game ends exactly after the last turn, and the last three rounds are double.
+  clock += 15_000 * 24;
+  const late = await getRoom(short);
+  assert.equal(late.turn.round, 13);
+  assert.equal(late.turn.doubleRound, true, "round 13 of 15 is the first double round");
+  clock += 15_000 * 6;
+  assert.equal((await getRoom(short)).status, "ended");
+});
+
+test("a 30-round game runs 60 turns for two players", async () => {
+  const [host] = await turnsGame(2, "turns", { rounds: 30 });
+  clock += 15_000 * 59;
+  const view = await getRoom(host);
+  assert.equal(view.status, "playing");
+  assert.equal(view.turn.round, 30);
+  assert.equal(view.turn.totalRounds, 30);
+  clock += 15_000;
+  assert.equal((await getRoom(host)).status, "ended");
+});
+
+test("rooms saved without a round count still start with 12 rounds", async () => {
+  const host = await json(await postRoom({ action: "create", name: "Host", mode: "turns" })) as Session;
+  await postRoom({ action: "join", code: host.code, name: "Brian" });
+  const key = `bran:room:${host.code}`;
+  const saved = (await store.get<Record<string, unknown>>(key))!;
+  delete saved.rounds;
+  await store.set(key, saved);
+  assert.equal((await getRoom(host)).rounds, 12, "waiting snapshot defaults to 12");
+  await postRoom({ action: "start", code: host.code, token: host.token, name: "Host" });
+  assert.equal((await getRoom(host)).turn.totalRounds, 12);
 });

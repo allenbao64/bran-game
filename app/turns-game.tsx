@@ -1,7 +1,8 @@
 "use client";
 
-import React, { FormEvent, useEffect, useRef, useState } from "react";
+import React, { FormEvent, useEffect, useState } from "react";
 import { WorldMap } from "@/app/world-map";
+import { TurnBanner, useTurnFocus, useYourTurnTitle } from "@/app/turn-banner";
 
 export type TurnView = {
   number: number; round: number; totalRounds: number; currentPlayerId: string | null;
@@ -22,7 +23,6 @@ type Props = {
 /** In-game screen for turn-based Country Sprint: banner, card, input, scoreboard and the shared map. */
 export function TurnsGame({ turn, scores, players, playerId, countryClaims, skewMs, entry, onEntry, notice, busy, onSubmit, onPass, onEnd, colorOf, largestGroups }: Props) {
   const [seconds, setSeconds] = useState(Math.ceil(turn.turnMs / 1000));
-  const input = useRef<HTMLInputElement>(null);
   const current = players.find((player) => player.id === turn.currentPlayerId);
   const mine = turn.currentPlayerId === playerId;
   const me = players.find((player) => player.id === playerId);
@@ -34,17 +34,16 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
     return () => window.clearInterval(id);
   }, [turn.number, turn.startedAt, turn.turnMs, skewMs]);
 
-  useEffect(() => { if (mine) input.current?.focus(); }, [mine, turn.number]);
+  const input = useTurnFocus(mine, turn.number);
+  useYourTurnTitle(mine);
+  const waiting = `Waiting for ${current?.name ?? "the other player"}…`;
 
   return <div className="game"><section>
-    <div className={mine ? "turn-banner mine" : "turn-banner"} style={{ borderLeftColor: current ? colorOf(current.id) : undefined }}>
-      <div><b>{mine ? "Your turn" : `${current?.name ?? "Another player"}’s turn`}</b></div>
-      <div className={seconds <= 5 ? "turn-clock urgent" : "turn-clock"} aria-label="Seconds left this turn">{String(seconds).padStart(2, "0")}s</div>
-    </div>
+    <TurnBanner mine={mine} name={current?.name ?? "another player"} color={current ? colorOf(current.id) : "#9aa29b"} seconds={seconds}/>
     <p className="round-line">ROUND {turn.round} OF {turn.totalRounds}{turn.doubleRound && <span className="double-banner">Double points</span>}</p>
     <div className="turn-card"><small>CARD</small><b>{turn.cardLabel ?? "No card"}</b></div>
     <form className="guess-form" onSubmit={onSubmit}>
-      <input ref={input} className="field" placeholder="Country name" aria-label="Country name" value={entry} onChange={(event) => onEntry(event.target.value)} disabled={!mine || busy || seconds <= 0}/>
+      <input ref={input} className={mine ? "field turn-input active" : "field turn-input"} style={{ "--pc": current ? colorOf(current.id) : "#9aa29b" } as React.CSSProperties} placeholder={mine ? "Country name" : waiting} aria-label="Country name" value={entry} onChange={(event) => onEntry(event.target.value)} disabled={!mine || busy || seconds <= 0}/>
       <button className="primary" disabled={!mine || !entry.trim() || busy || seconds <= 0}>Claim</button>
     </form>
     <div className="turn-actions"><button type="button" className="quiet" disabled={!mine || busy || seconds <= 0} onClick={onPass}>Pass</button></div>

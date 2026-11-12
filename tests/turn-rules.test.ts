@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { allCountryFacts, countryFacts } from "@/lib/countries";
 import {
   allCodes, cardFits, cardLabel, computeAwards, computeScores, dealCard, fittingCodes, isDoubleRound, largestConnectedGroup,
-  pointsForRound, smallRegions, unclaimedCodes, regionBonusPoints, largestConnectedGroupCodes, largestGroupsByPlayer, TURN_SPEEDS, isTurnSeconds, type Card, type Claim
+  pointsForRound, smallRegions, unclaimedCodes, regionBonusPoints, largestConnectedGroupCodes, largestGroupsByPlayer, TURN_SPEEDS, isTurnSeconds, TURN_ROUND_OPTIONS, DEFAULT_TURN_ROUNDS, LEGACY_TURN_ROUNDS, isTurnRounds, type Card, type Claim
 } from "@/lib/turn-rules";
 
 const claim = (code: string, playerId: string, round = 1, points = 1): Claim => ({ code, playerId, points, round, turn: 0, at: 0 });
@@ -66,11 +66,15 @@ test("size cards use the documented ranges", () => {
 });
 
 test("claims are worth 1 point, or 2 during the last three rounds", () => {
-  assert.equal(pointsForRound(1), 1);
-  assert.equal(pointsForRound(9), 1);
-  assert.equal(pointsForRound(10), 2);
-  assert.equal(pointsForRound(12), 2);
-  assert.ok(!isDoubleRound(9) && isDoubleRound(10));
+  assert.equal(pointsForRound(1, 12), 1);
+  assert.equal(pointsForRound(9, 12), 1);
+  assert.equal(pointsForRound(10, 12), 2);
+  assert.equal(pointsForRound(12, 12), 2);
+  assert.ok(!isDoubleRound(9, 12) && isDoubleRound(10, 12));
+  for (const total of TURN_ROUND_OPTIONS) {
+    assert.equal(pointsForRound(total - 3, total), 1, `${total} rounds: round ${total - 3} is single`);
+    assert.deepEqual([total - 2, total - 1, total].map((round) => pointsForRound(round, total)), [2, 2, 2], `${total} rounds: the last three are double`);
+  }
   assert.equal(pointsForRound(2, 5), 1);
   assert.equal(pointsForRound(3, 5), 2, "total rounds shift the double-point window");
 });
@@ -225,4 +229,25 @@ test("turn speeds are 10, 15 and 25 seconds", () => {
   assert.deepEqual(TURN_SPEEDS.map((s) => [s.label, s.seconds]), [["Blitz", 10], ["Standard", 15], ["Relaxed", 25]]);
   assert.ok(isTurnSeconds(10) && isTurnSeconds(15) && isTurnSeconds(25));
   assert.ok(!isTurnSeconds(20) && !isTurnSeconds("15") && !isTurnSeconds(undefined));
+});
+
+test("round counts are 15, 20 or 30 with 20 as the default, and old rooms keep 12", () => {
+  assert.deepEqual([...TURN_ROUND_OPTIONS], [15, 20, 30]);
+  assert.equal(DEFAULT_TURN_ROUNDS, 20);
+  assert.equal(LEGACY_TURN_ROUNDS, 12);
+  for (const good of [15, 20, 30]) assert.ok(isTurnRounds(good));
+  for (const bad of [12, 0, 25, "20", 20.5, null, undefined, true]) assert.equal(isTurnRounds(bad), false, `rejects ${JSON.stringify(bad)}`);
+});
+
+test("late in the longest game every card still has an answer: 90 claims leave plenty of countries and dealt cards fit at least 3 or are wild", () => {
+  const all = allCodes();
+  assert.ok(all.length - 90 >= 100, "30 rounds x 3 players cannot exhaust the country list");
+  const rng = seeded(21);
+  // Claim 89 random countries in a shuffled order, dealing a card at each step.
+  const order = [...all].sort(() => rng() - 0.5);
+  for (let claimed = 0; claimed < 90; claimed += 1) {
+    const unclaimed = order.slice(claimed);
+    const card = dealCard(unclaimed, rng);
+    if (card.kind !== "wild") assert.ok(fittingCodes(card, unclaimed).length >= 3, `${card.kind} card with ${claimed} claimed`);
+  }
 });

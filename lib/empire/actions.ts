@@ -243,6 +243,60 @@ function claim(state: EmpireState, playerId: string, code: string, now: number, 
   return endTurn(next, now, deps);
 }
 
+/** Whether `playerId` may steal `code` by ownership, borders, round-start standings and protection. Shared by the steal action and stealStatus. */
+function countryStealError(state: EmpireState, playerId: string, code: string, deps: EmpireDeps): ActionError | null {
+  const owner = state.owners[code];
+  if (owner === undefined || owner === playerId) {
+    return fail(409, "You can only steal a country owned by another player.");
+  }
+  const mine = ownedBy(state.owners, playerId);
+  if (!deps.geo.neighbours(code).some((n) => mine.has(n))) {
+    return fail(409, "You can only steal a country that borders one of yours.");
+  }
+  // Compare standings from the start of the round so seat order doesn't decide who may steal.
+  const startTotals = state.roundStartTotals ?? {};
+  if ((startTotals[owner] ?? 0) < (startTotals[playerId] ?? 0)) {
+    return fail(409, "You can only steal from players at or above your score at the start of the round.");
+  }
+  if (deps.scoring.protectedCodes(state, deps.geo).has(code)) {
+    return fail(409, "That country is protected.");
+  }
+  return null;
+}
+
+export type StealStatus = {
+  canSteal: boolean;
+  /** Country codes the viewer could steal right now (empty unless canSteal). */
+  targets: string[];
+  /** Ids of the players those countries belong to. */
+  from: string[];
+  /** Why not, as a short lowercase fragment; null when canSteal. */
+  reason: string | null;
+};
+
+/** Whether `viewerId` can steal right now and what, using the same rules as the steal action (card fit aside). */
+export function stealStatus(state: EmpireState, viewerId: string, deps: EmpireDeps): StealStatus {
+  const no = (reason: string): StealStatus => ({ canSteal: false, targets: [], from: [], reason });
+  const me = state.players.find((p) => p.id === viewerId);
+  if (!me) return no("you are not in this game");
+  if (state.finished) return no("the game is over");
+  if (state.players[state.seat]?.id !== viewerId) return no("not your turn");
+  if (state.event?.kind === "ceasefire") return no("a ceasefire is on this round");
+  if (state.event?.kind !== "freeSteals" && me.stealTokens < 1) return no("you have no steal tokens left");
+
+  const startTotals = state.roundStartTotals ?? {};
+  const rivals = state.players.filter((p) => p.id !== viewerId && (startTotals[p.id] ?? 0) >= (startTotals[viewerId] ?? 0));
+  if (rivals.length === 0) return no("you were ahead of everyone at the start of the round");
+
+  const targets = Array.from(allCountries(deps)).filter((code) => countryStealError(state, viewerId, code, deps) === null).sort();
+  if (targets.length === 0) {
+    const owned = rivals.flatMap((p) => Object.keys(state.owners).filter((code) => state.owners[code] === p.id));
+    const bordering = owned.filter((code) => { const mine = ownedBy(state.owners, viewerId); return deps.geo.neighbours(code).some((n) => mine.has(n)); });
+    return no(bordering.length === 0 ? "none of their countries border yours" : "their bordering countries are protected");
+  }
+  return { canSteal: true, targets, from: Array.from(new Set(targets.map((code) => state.owners[code]))), reason: null };
+}
+
 function steal(
   state: EmpireState,
   playerId: string,
@@ -256,26 +310,11 @@ function steal(
   if (state.event?.kind === "ceasefire") return fail(409, "A ceasefire is on this round.");
   if (!allCountries(deps).has(code)) return fail(400, "Unknown country.");
 
+  const blocked = countryStealError(state, playerId, code, deps);
+  if (blocked) return blocked;
   const owner = state.owners[code];
-  if (owner === undefined || owner === playerId) {
-    return fail(409, "You can only steal a country owned by another player.");
-  }
-
   const neighbours = (c: string) => deps.geo.neighbours(c);
   const mine = ownedBy(state.owners, playerId);
-  if (!neighbours(code).some((n) => mine.has(n))) {
-    return fail(409, "You can only steal a country that borders one of yours.");
-  }
-
-  // Compare standings from the start of the round so seat order doesn't decide who may steal.
-  const startTotals = state.roundStartTotals ?? {};
-  if ((startTotals[owner] ?? 0) < (startTotals[playerId] ?? 0)) {
-    return fail(409, "You can only steal from players at or above your score at the start of the round.");
-  }
-
-  if (deps.scoring.protectedCodes(state, deps.geo).has(code)) {
-    return fail(409, "That country is protected.");
-  }
 
   if (!deps.cards.cardFits(card, code, { ownedByMe: mine, neighbours })) {
     return fail(400, "That doesn't fit your card.");
