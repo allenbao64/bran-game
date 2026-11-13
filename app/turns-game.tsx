@@ -51,8 +51,9 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
   const homes = Object.fromEntries(Object.entries(startCountries).filter(([id]) => players.some((player) => player.id === id)));
   const guessText = (entry: GuessEntry) => {
     const country = entry.code ? countryFacts(entry.code)?.name : undefined;
-    if (entry.kind !== "wrong" || !country || !entry.text.startsWith(country)) return <span className={entry.kind === "claimed" ? undefined : "muted"}>{entry.text}</span>;
-    return <><s>{country}</s><span className="muted">{entry.text.slice(country.length)}</span></>;
+    if (entry.kind !== "wrong" || !country) return <span className={entry.kind === "claimed" ? undefined : "muted"}>{entry.text}</span>;
+    const reason = entry.text.startsWith(country) ? entry.text.slice(country.length).trim() : entry.text;
+    return <><s>{country}</s> <span className="muted">{reason}</span></>;
   };
 
   return <div className="game turns-layout">

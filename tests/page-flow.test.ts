@@ -156,7 +156,7 @@ test("a turns game shows the banner, round counter, card, scoreboard and only le
     countryClaims: { CA: "p2" }, lockedCountryCodes: ["CA"], startCountries: { p1: "FR", p2: "CA" },
     recentGuesses: [
       { playerId: "p2", kind: "claimed", code: "CA", text: "Canada", points: 2, at: 3 },
-      { playerId: "p1", kind: "wrong", code: "CL", text: "Chile doesn't fit", points: 0, at: 2 },
+      { playerId: "p1", kind: "wrong", code: "CL", text: "doesn't fit", points: 0, at: 2 },
       { playerId: "p2", kind: "passed", code: null, text: "passed", points: 0, at: 1 }
     ],
     turn: { number: 8, round: 10, totalRounds: 12, currentPlayerId: current, startedAt: Date.now(), turnMs: 15000, serverNow: Date.now(), finished: false, card: { kind: "landlocked" }, cardLabel: "Landlocked country", doubleRound: true },
