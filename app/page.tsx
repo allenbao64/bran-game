@@ -212,7 +212,7 @@ export default function Home() {
       setGuesses((current) => current.some((guess) => guess.code === answer.code) ? current : [answer, ...current]);
       if (room.gameId === "countries") setCountryClaims((current) => ({ ...current, [answer.code]: playerId }));
     } catch (error) { setNotice(errorText(error)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); input.current?.focus(); }
   }
 
   async function passTurn() {
@@ -304,7 +304,7 @@ export default function Home() {
     {stage === "game" && room && !isTurns && !isEmpire && <div className="game"><section><div className="game-head"><h1>{activeGame.title}</h1><div className={left < 30 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div>
       {room.gameId === "countries" && <div className="live-map"><WorldMap claims={countryClaims} players={players} youId={playerId}/>
         <div className="continent-chips" aria-label="Countries left by continent">{continentCounts(countryClaims).map((continent) => <span key={continent.name} className={continent.left ? "continent-chip" : "continent-chip done"}>{continent.name} <b>{continent.left ? `${continent.left} left` : "done"}</b></span>)}</div></div>}
-      <form className="guess-form" onSubmit={submitGuess}><input ref={input} className="field" placeholder={activeGame.inputPlaceholder} value={entry} onChange={(event) => setEntry(event.target.value)} disabled={left <= 0 || busy}/><button className="primary" disabled={!entry.trim() || left <= 0 || busy}>Claim</button></form>
+      <form className="guess-form" onSubmit={submitGuess}><input ref={input} className="field" placeholder={activeGame.inputPlaceholder} value={entry} onChange={(event) => setEntry(event.target.value)} readOnly={busy} disabled={left <= 0}/><button className="primary" disabled={!entry.trim() || left <= 0 || busy}>Claim</button></form>
       {notice && <p className="notice">{notice}</p>}<div className="guess-title">YOUR ANSWERS　<b>{guesses.length}</b>{!isCountries && <span>HIDDEN FROM OTHERS</span>}</div>
       <div className="guess-list">{guesses.map((guess, index) => <div className="guess" key={guess.code}><small>{String(guesses.length - index).padStart(2,"0")}</small>{guess.name}<b>✓</b></div>)}</div>
       {room.gameId === "countries" && <div className="claim-lists">{players.map((player) => { const owned = Object.entries(countryClaims).filter(([, owner]) => owner === player.id).map(([code]) => countryByCode(code)?.name ?? code).sort(); return <div className="claim-list" key={player.id} style={{ borderColor: colorOf(player.id) }}><b style={{ color: colorOf(player.id) }}>{player.name}{player.id === playerId ? " (you)" : ""} · {owned.length}</b><div className="chips">{owned.length ? owned.map((countryName) => <span key={countryName} style={{ background: colorOf(player.id) }}>{countryName}</span>) : <em>Nothing claimed yet</em>}</div></div>; })}</div>}</section>

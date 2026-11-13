@@ -43,7 +43,7 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
     <p className="round-line">ROUND {turn.round} OF {turn.totalRounds}{turn.doubleRound && <span className="double-banner">Double points</span>}</p>
     <div className="turn-card"><small>CARD</small><b>{turn.cardLabel ?? "No card"}</b></div>
     <form className="guess-form" onSubmit={onSubmit}>
-      <input ref={input} className={mine ? "field turn-input active" : "field turn-input"} style={{ "--pc": current ? colorOf(current.id) : "#9aa29b" } as React.CSSProperties} placeholder={mine ? "Country name" : waiting} aria-label="Country name" value={entry} onChange={(event) => onEntry(event.target.value)} disabled={!mine || busy || seconds <= 0}/>
+      <input ref={input} className={mine ? "field turn-input active" : "field turn-input"} style={{ "--pc": current ? colorOf(current.id) : "#9aa29b" } as React.CSSProperties} placeholder={mine ? "Country name" : waiting} aria-label="Country name" value={entry} onChange={(event) => onEntry(event.target.value)} readOnly={busy} disabled={!mine || seconds <= 0}/>
       <button className="primary" disabled={!mine || !entry.trim() || busy || seconds <= 0}>Claim</button>
     </form>
     <div className="turn-actions"><button type="button" className="quiet" disabled={!mine || busy || seconds <= 0} onClick={onPass}>Pass</button></div>

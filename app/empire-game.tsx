@@ -103,7 +103,7 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
 
       {!mine && <div className="empire-actions"><input className="field turn-input" style={{ "--pc": currentColor } as React.CSSProperties} placeholder={`Waiting for ${current?.name ?? "the other player"}…`} aria-label="Country name" disabled/></div>}
       {mine && <form className="empire-actions" onSubmit={submit}>
-        <input ref={input} className="field turn-input active" style={{ "--pc": currentColor } as React.CSSProperties} placeholder="Country name" aria-label="Country name" value={country} onChange={(event) => setCountry(event.target.value)} disabled={busy}/>
+        <input ref={input} className="field turn-input active" style={{ "--pc": currentColor } as React.CSSProperties} placeholder="Country name" aria-label="Country name" value={country} onChange={(event) => setCountry(event.target.value)} readOnly={busy}/>
         {owner && owner !== playerId && <input className="field" placeholder={`Capital of ${resolved?.name}`} aria-label="Capital" value={capital} onChange={(event) => setCapital(event.target.value)} disabled={busy}/>}
         <div className="empire-buttons">
           <button className="primary" disabled={busy || !country.trim() || !picked}>{owner && owner !== playerId ? "Steal" : "Claim"}</button>

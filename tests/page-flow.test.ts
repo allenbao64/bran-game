@@ -138,6 +138,7 @@ test("a host can start a two-player room from the lobby", async () => {
   assert.match(doc.querySelector(".continent-chips")!.textContent ?? "", /Africa \d+ left/);
   assert.ok(doc.querySelector(".map-zoom-controls"), "the live map can be zoomed");
 
+
   doc.defaultView!.confirm = () => true;
   const stopButton = [...doc.querySelectorAll("button")].find((button) => button.textContent?.includes("End round & reveal"));
   assert.ok(stopButton, "the host should have a way to end a live round");
@@ -242,4 +243,29 @@ test("the Pass button locks when the turn clock reaches zero, like the input and
   assert.equal(doc.querySelector<HTMLInputElement>(".guess-form input")!.disabled, true);
   assert.equal(passButton.disabled, true, "no passing once the clock shows 0");
   assert.equal(doc.querySelectorAll(".map-country.territory").length > 0, true, "largest groups get a thicker outline");
+});
+
+test("in a live race the answer box keeps focus after each claim", async () => {
+  const urls: string[] = [];
+  let answerSent = () => {};
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    urls.push(String(input));
+    if (String(input).includes("/api/guess")) { await new Promise<void>((resolve) => { answerSent = resolve; }); return jsonResponse({ ok: true }); }
+    return jsonResponse({ code: "ABC234", gameId: "countries", mode: "live", status: "playing", startedAt: Date.now(), players: twoPlayers, playerId: "p1", myGuesses: [], countryClaims: {} });
+  }) as typeof fetch;
+  const doc = mount({ code: "ABC234", token: "a".repeat(64), playerId: "p1", name: "Host" });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  const answer = doc.querySelector<HTMLInputElement>(".guess-form input")!;
+  answer.id = "answer";
+  answer.focus();
+  setInput(doc, "answer", "France");
+  act(() => { answer.dispatchEvent(new dom.window.KeyboardEvent("keyup", { bubbles: true })); });
+  const claim = [...doc.querySelectorAll<HTMLButtonElement>(".guess-form button")].find((button) => button.textContent === "Claim")!;
+  await act(async () => { claim.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.ok(urls.some((url) => url.includes("/api/guess")), "the answer was sent");
+  assert.equal(answer.disabled, false, "the box is never disabled while sending (browsers drop focus from disabled inputs)");
+  assert.equal(answer.readOnly, true, "but it can't be edited mid-send");
+  await act(async () => { answerSent(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.equal(answer.value, "", "the box clears after a claim");
+  assert.equal(doc.activeElement, answer, "the box keeps focus so you can type the next country");
 });
