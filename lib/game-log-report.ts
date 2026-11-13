@@ -321,7 +321,7 @@ export function aggregateGames(games: GameLog[]): LogReport {
   const meanDurationMsBySeconds: Record<string, number> = {};
   for (const [key, values] of durationsBySeconds) meanDurationMsBySeconds[key] = mean(values)!;
 
-  const suddenRows = rows.filter((row) => row.suddenRounds > 0);
+  const suddenRows = finished.filter((row) => row.suddenRounds > 0);
   const byRounds: Record<string, number> = {};
   for (const row of suddenRows) byRounds[String(row.suddenRounds)] = (byRounds[String(row.suddenRounds)] ?? 0) + 1;
 
@@ -388,7 +388,7 @@ export function formatReport(report: LogReport): string {
   out.push(`Outcomes of all turns: ${report.turns.claimed} claimed, ${report.turns.passed} passed, ${report.turns.timedOut} timed out`, "");
 
   out.push(sectionTitle("1. Miss rate by card kind"));
-  out.push("Miss = passed or timed out. Only turns that showed the card are counted.");
+  out.push("Miss = passed or timed out. Only turns that showed the card are counted. Rates on a few turns are noisy: read them with the counts.");
   if (report.kinds.length === 0) out.push("No shown turns yet.");
   else {
     out.push(table([
@@ -415,17 +415,17 @@ export function formatReport(report: LogReport): string {
 
   out.push(sectionTitle("3. Answer time"));
   out.push(table([
-    ["turn length", "games", "claims", "median claim", "mean claim", "p90 claim", "median wrong", "miss rate"],
+    ["turn length", "games", "turns", "claims", "median claim", "mean claim", "p90 claim", "median wrong", "miss rate"],
     ...report.bySeconds.map((row) => [
-      row.turnSeconds === null ? "-" : `${row.turnSeconds}s`, String(row.games), String(row.claimed),
+      row.turnSeconds === null ? "-" : `${row.turnSeconds}s`, String(row.games), String(row.seenTurns), String(row.claimed),
       secs(row.claimMs.median), secs(row.claimMs.mean), secs(row.claimMs.p90), secs(row.wrongMs.median), pct(row.missRate),
     ]),
   ]));
-  if (report.byKindAndSeconds.length) {
+  if (report.byKindAndSeconds.some((row) => row.claimMs.count > 0)) {
     out.push("", "By card kind and turn length (claims only)");
     out.push(table([
       ["card kind", "turn length", "claims", "median claim", "p90 claim"],
-      ...report.byKindAndSeconds.map((row) => [
+      ...report.byKindAndSeconds.filter((row) => row.claimMs.count > 0).map((row) => [
         row.kind, row.turnSeconds === null ? "-" : `${row.turnSeconds}s`, String(row.claimMs.count), secs(row.claimMs.median), secs(row.claimMs.p90),
       ]),
     ]));
@@ -434,7 +434,7 @@ export function formatReport(report: LogReport): string {
 
   out.push(sectionTitle("4. Scores by round and sudden death"));
   out.push(`Sudden death: ${report.sudden.games} of ${report.finishedGames} finished games (${pct(report.sudden.share)}). Decided: ${report.sudden.decided}. Shared win: ${report.sudden.sharedWin}.`);
-  out.push(`Margin of victory over ${report.scoring.finishedWithMargin} finished games: mean ${num(report.scoring.meanMargin, 1)}, median ${num(report.scoring.medianMargin, 1)}. Comebacks (trailed by ${COMEBACK_POINTS}+): ${report.scoring.comebacks}. Mean lead changes: ${num(report.scoring.meanLeadChanges, 1)}.`);
+  out.push(`Margin of victory over ${count(report.scoring.finishedWithMargin, "finished game")}: mean ${num(report.scoring.meanMargin, 1)}, median ${num(report.scoring.medianMargin, 1)}. Comebacks (trailed by ${COMEBACK_POINTS}+): ${report.scoring.comebacks}. Mean lead changes: ${num(report.scoring.meanLeadChanges, 1)}.`);
   for (const row of report.perGame) {
     const rounds = row.roundTotals.length
       ? row.roundTotals.map((round) => `R${round.round}${round.sudden ? " sudden" : ""} ${Object.entries(round.totals).map(([name, total]) => `${name} ${total}`).join(" / ")}`).join("; ")

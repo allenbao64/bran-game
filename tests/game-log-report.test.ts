@@ -273,3 +273,21 @@ test("toJsonLines: one parseable line per record, in order, with the logId", () 
   assert.ok(parsed.every((entry) => entry.logId === game.logId));
   assert.equal(lines.some((line) => line.includes("token")), false);
 });
+
+test("sudden death is only counted for finished games, so the share never exceeds 1", () => {
+  const unfinished = { ...fixtureGame(), end: null };
+  const report = aggregateGames([fixtureGame(), unfinished]);
+  assert.equal(report.finishedGames, 1);
+  assert.equal(report.sudden.games, 1);
+  assert.equal(report.sudden.share, 1);
+});
+
+test("formatReport shows the denominators next to the rates", () => {
+  const text = formatReport(aggregateGames([fixtureGame()]));
+  assert.match(text, /turn length\s+games\s+turns\s+claims/);
+  assert.match(text, /10s\s+1\s+6\s+3\s/, "10s: 1 game, 6 shown turns, 3 claims");
+  assert.match(text, /Rates on a few turns are noisy/);
+  assert.match(text, /flag\s+3\s+2\s+1\s+0\s+33%/, "flag: shown 3, claimed 2, passed 1, timed out 0, miss 33%");
+  assert.match(text, /Margin of victory over 1 finished game:/);
+  assert.equal(/continent\s+10s\s+0/.test(text), false, "kinds with no claims are not listed by turn length");
+});

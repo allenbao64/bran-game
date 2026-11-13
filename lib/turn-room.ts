@@ -230,7 +230,7 @@ export function applyClaim(room: TurnRoom, playerId: string, code: string, now: 
   const sudden = Boolean(turn.sudden);
   const round = sudden ? turn.totalRounds + turn.sudden!.round : currentRound(turn);
   const points = pointsForClaim(matched, deal.length, round, turn.totalRounds, sudden);
-  const unclaimedBefore = unclaimedCodes(claims);
+  const unclaimedBefore = isGameLoggingEnabled() ? unclaimedCodes(claims) : [];   // before the push; only needed for the log
   claims.push({ code: country.code, playerId, points, round, turn: turn.number, at: now, fit: matched, ...(sudden ? { sudden: true } : {}) });
   room.claims = claims;
   const both = deal.length >= 2 && matched === deal.length;
