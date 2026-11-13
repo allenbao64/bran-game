@@ -153,7 +153,12 @@ const twoPlayers = [{ id: "p1", name: "Host", host: true }, { id: "p2", name: "B
 test("a turns game shows the banner, round counter, card, scoreboard and only lets the current player type", async () => {
   const snapshot = (current: string) => ({
     code: "ABC234", gameId: "countries", mode: "turns", status: "playing", startedAt: Date.now(), players: twoPlayers, playerId: "p1", myGuesses: [],
-    countryClaims: { CA: "p2" }, lockedCountryCodes: ["CA"],
+    countryClaims: { CA: "p2" }, lockedCountryCodes: ["CA"], startCountries: { p1: "FR", p2: "CA" },
+    recentGuesses: [
+      { playerId: "p2", kind: "claimed", code: "CA", text: "Canada", points: 2, at: 3 },
+      { playerId: "p1", kind: "wrong", code: "CL", text: "Chile doesn't fit", points: 0, at: 2 },
+      { playerId: "p2", kind: "passed", code: null, text: "passed", points: 0, at: 1 }
+    ],
     turn: { number: 8, round: 10, totalRounds: 12, currentPlayerId: current, startedAt: Date.now(), turnMs: 15000, serverNow: Date.now(), finished: false, card: { kind: "landlocked" }, cardLabel: "Landlocked country", doubleRound: true },
     scores: { p1: { points: 3, bonuses: [], bonusTotal: 0, total: 3, territory: 1 }, p2: { points: 4, bonuses: [{ label: "Largest territory (3 linked)", points: 2 }], bonusTotal: 2, total: 6, territory: 3 } },
     claimLog: []
@@ -167,11 +172,19 @@ test("a turns game shows the banner, round counter, card, scoreboard and only le
   const doc = mount({ code: "ABC234", token: "a".repeat(64), playerId: "p1", name: "Host" });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   const text = () => doc.body.textContent ?? "";
-  assert.match(text(), /ROUND 10 OF 12/);
+  assert.match(text(), /Round 10 of 12/);
   assert.match(text(), /Double points/);
   assert.match(text(), /Landlocked country/);
-  assert.match(text(), /Waiting for Brian…/);
+  assert.match(text(), /Brian's turn/);
   assert.match(text(), /Largest territory \(3 linked\)/, "current bonuses show live");
+  assert.match(text(), /start France/);
+  assert.match(text(), /start Canada/);
+  assert.equal(doc.querySelectorAll(".map-home").length, 2, "each starting country gets a home marker");
+  const feed = [...doc.querySelectorAll(".guess-feed li")];
+  assert.equal(feed.length, 3);
+  assert.match(feed[0].textContent ?? "", /Brian Canada \+2/);
+  assert.equal(feed[1].querySelector("s")?.textContent, "Chile", "a wrong guess is struck through");
+  assert.match(feed[1].textContent ?? "", /Chile doesn't fit/);
   const field = () => doc.querySelector<HTMLInputElement>(".guess-form input")!;
   const passButton = () => [...doc.querySelectorAll("button")].find((button) => button.textContent === "Pass")!;
   assert.equal(field().disabled, true, "input is locked on someone else's turn");
@@ -190,7 +203,7 @@ test("a turns game shows the banner, round counter, card, scoreboard and only le
 
   current = "p1";
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1000)); });
-  assert.match(text(), /YOUR TURN/);
+  assert.match(text(), /Your turn/);
   assert.equal(field().disabled, false, "polling every 0.8s unlocks the input on your turn");
   assert.equal(doc.title, "Your turn · Atlas Sprint", "the tab title says it is your turn");
   assert.equal(doc.activeElement, field(), "the input is focused on your turn");
@@ -276,4 +289,37 @@ test("in a live race the answer box keeps focus after each claim", async () => {
   await act(async () => { answerSent(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal(answer.value, "", "the box clears after a claim");
   assert.equal(doc.activeElement, answer, "the box keeps focus so you can type the next country");
+});
+
+test("in a turns game the answer box keeps focus after the server rejects a guess", async () => {
+  const snapshot = {
+    code: "ABC234", gameId: "countries", mode: "turns", status: "playing", startedAt: Date.now(), players: twoPlayers, playerId: "p1", myGuesses: [],
+    countryClaims: {}, lockedCountryCodes: [],
+    turn: { number: 1, round: 1, totalRounds: 12, currentPlayerId: "p1", startedAt: Date.now(), turnMs: 60000, serverNow: Date.now(), finished: false, card: { kind: "wild" }, cardLabel: "Wild card: any country", doubleRound: false },
+    scores: {}, claimLog: []
+  };
+  let reject = () => {};
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.body && String(init.body).includes("answerCode")) {
+      await new Promise<void>((resolve) => { reject = resolve; });
+      return new Response(JSON.stringify({ error: "That country doesn't fit your card." }), { status: 400, headers: { "content-type": "application/json" } });
+    }
+    return jsonResponse(snapshot);
+  }) as typeof fetch;
+  const doc = mount({ code: "ABC234", token: "a".repeat(64), playerId: "p1", name: "Host" });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  const answer = doc.querySelector<HTMLInputElement>(".guess-form input")!;
+  answer.id = "answer";
+  answer.focus();
+  setInput(doc, "answer", "France");
+  act(() => { answer.dispatchEvent(new dom.window.KeyboardEvent("keyup", { bubbles: true })); });
+  const claim = [...doc.querySelectorAll<HTMLButtonElement>(".guess-form button")].find((button) => button.textContent === "Claim")!;
+  await act(async () => { claim.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.equal(answer.disabled, false, "the box is never disabled while sending");
+  const elsewhere = doc.body.appendChild(doc.createElement("button"));
+  elsewhere.focus();
+  assert.notEqual(doc.activeElement, answer, "focus has moved off the box mid-send");
+  await act(async () => { reject(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.match(doc.body.textContent ?? "", /doesn't fit/, "the rejection is shown");
+  assert.equal(doc.activeElement, answer, "the box has focus again so you can type another country");
 });

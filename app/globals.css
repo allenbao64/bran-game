@@ -64,3 +64,31 @@
 .claim-note{color:var(--green);font-size:12px;line-height:1.5}
 .map-country.region-highlight{stroke:var(--ink);stroke-width:2;stroke-linejoin:round}.map-dot.region-highlight{stroke:var(--ink);stroke-width:1.6}
 .map-country.region-highlight,.map-dot.region-highlight{vector-effect:non-scaling-stroke}
+
+/* Turn-based screen: frozen top bar, big map, narrow side column. Scoped to .turns-layout so live and empire screens keep their spacing. */
+.game.turns-layout{grid-template-columns:minmax(0,1fr) 232px;gap:6px 10px;padding:0 0 14px;align-items:start}
+.turns-layout .turn-bar{grid-column:1/-1;position:sticky;top:0;z-index:30;background:var(--paper);border-bottom:1px solid var(--line);padding:6px 0 4px}
+.turns-layout .turn-bar-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 14px}
+.turns-layout .turn-status{font-size:15px;font-weight:700;white-space:nowrap}.turns-layout .turn-status .turn-clock{font:500 15px 'DM Mono',monospace;color:inherit}.turns-layout .turn-status.urgent .turn-clock{color:var(--orange)}.turns-layout .turn-status span{opacity:.7}
+.turns-layout .round-line{display:inline-flex;align-items:center;gap:8px;margin:0;font:500 10px 'DM Mono',monospace;letter-spacing:.05em}.turns-layout .double-banner{padding:3px 7px;font-size:9px}
+.turns-layout .turn-bar-play{display:flex;align-items:center;flex-wrap:wrap;gap:4px 14px;margin-top:3px}
+.turns-layout .turn-card-text{flex:0 1 auto;font:600 22px/1.15 'Playfair Display',serif;color:var(--green);letter-spacing:-.02em}
+.turns-layout .guess-form{flex:1 1 300px;margin:0;gap:6px;min-width:0}.turns-layout .guess-form .field{padding:8px 11px;min-width:0}.turns-layout .guess-form .primary{width:auto;margin:0;padding:0 16px}.turns-layout .guess-form .quiet{padding:0 12px}
+.turns-layout .turn-input.active,.turns-layout .turn-input.active:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--pc) 25%,transparent)}
+.turns-layout .turn-note{min-height:16px;margin-top:2px}.turns-layout .turn-note p{margin:0;font-size:12px;line-height:16px}
+.turns-layout .turn-map{min-width:0}.turns-layout .world-map{margin:0;border-top:0;padding-top:0}.turns-layout .world-map-heading{font-size:9px}.turns-layout .map-legend{display:none}
+.turns-layout .map-home text{pointer-events:none;font-family:'DM Sans',sans-serif}.turns-layout .map-home circle{pointer-events:none}
+.turns-layout .turn-side{border:0;padding:0;display:grid;gap:4px;min-width:0}
+.turns-layout .scoreboard{gap:3px;margin:0}
+.turns-layout .score-row{grid-template-columns:auto 1fr auto;gap:0 6px;padding:4px 7px;border:1px solid #eeede6;align-items:center}
+.turns-layout .score-dot{width:9px;height:9px;border-radius:50%}.turns-layout .score-row>b{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.turns-layout .score-row>strong{font-size:16px}
+.turns-layout .score-row small{grid-column:2/-1;font-size:9px;letter-spacing:0;line-height:1.35}.turns-layout .score-row .bonus-chip{margin:2px 4px 0 0;padding:1px 4px;font-size:8px}
+.side-title{margin-top:6px;color:#748076;font:500 9px 'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase}
+.guess-feed{list-style:none;margin:0;padding:0;display:grid;gap:1px;font-size:11px;line-height:1.35}.guess-feed:empty{display:none}.guess-feed li{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.guess-feed b{font-weight:700}.guess-feed s{color:#8a938b}.guess-feed .muted{color:#8a938b}.guess-feed em{font-style:normal;color:var(--green);font:500 10px 'DM Mono',monospace}
+.turns-layout .region-panel{margin:0}
+.turns-layout .region-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:baseline;gap:0 6px;margin:0;padding:2px 6px;border-color:transparent;border-bottom-color:#eeede6;font-size:11px;line-height:1.35}
+.turns-layout .region-row .region-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.turns-layout .region-state{grid-column:auto;display:flex;gap:4px;font-size:9px;white-space:nowrap}.turns-layout .region-row b{font-size:10px}
+.turns-layout .region-row.blocked{opacity:.5}.turns-layout .region-row.blocked .region-name{text-decoration:line-through}
+.turns-layout .end-round{margin-top:6px;padding:5px 8px;font-size:10px}
+@media(max-width:800px){.game.turns-layout{grid-template-columns:1fr;gap:6px}.turns-layout .turn-card-text{font-size:19px}.turns-layout .guess-form{flex-basis:100%}}
+.map-country.not-in-game,.map-country.not-in-game:hover{fill:url(#not-in-game);cursor:default}
