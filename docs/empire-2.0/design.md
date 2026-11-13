@@ -157,7 +157,7 @@ Claiming a chokepoint shuts a rival's frontier through it. Blocking has no cost 
 |---|---|
 | Trade winds | Colonizing costs 2 |
 | Ceasefire | No annexing |
-| Golden age | Cities pay double income |
+| Golden age | Each city pays 2 income instead of 1. Boom payouts are not doubled. |
 | Gold rush | Bounties pay 4 |
 | Closed borders | Expanding costs 1 more |
 
@@ -167,7 +167,7 @@ On your turn, offer influence for one of another player's countries, or swap two
 
 ## Catch-up and fairness
 
-Being behind is measured at the start of each round, when everyone has had the same number of turns, so going last never counts as losing. This carries over the fix now being built for Empire 1.
+Being behind is measured at the start of each round, when everyone has had the same number of turns, so going last never counts as losing. This carries over the fix already made in Empire 1.
 
 - **Round-start standings:** victory points are snapshotted when each round begins. Every "who is behind" rule reads that snapshot, never mid-round totals.
 - **Underdog income:** +2 influence a round for anyone at least 2 victory points behind the leader. It adds options rather than taking anything from the leader.
