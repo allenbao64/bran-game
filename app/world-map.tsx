@@ -65,7 +65,7 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
   }, [zoomable]);
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
-    cancelAnimationFrame(glide.current);
+    if (glide.current) cancelAnimationFrame(glide.current);
     velocity.current = { x: 0, y: 0, at: performance.now() };
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (event.pointerType === "mouse" || viewRef.current.k > 1 || pointers.current.size > 1) event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -100,7 +100,7 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
     };
     glide.current = requestAnimationFrame(step);
   };
-  useEffect(() => () => cancelAnimationFrame(glide.current), []);
+  useEffect(() => () => { if (glide.current) cancelAnimationFrame(glide.current); }, []);
   const zoomBy = (factor: number) => update(zoomAt(viewRef.current, factor, MAP_WIDTH / 2, MAP_HEIGHT / 2, MAP_WIDTH, MAP_HEIGHT));
   const zoomed = view.k > 1;
 
