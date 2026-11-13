@@ -5,11 +5,16 @@
  */
 import type { Redis } from "@upstash/redis";
 import { ROOM_TTL_SECONDS } from "@/lib/redis";
+import {
+  buildEndRecord, buildStartRecord, buildTurnEvent, buildWrongEvent, endsRound, flushQueuedLog, isGameLoggingEnabled, logIdOf, queueLog, totalsOf,
+  writeGameEnd, writeGameStart, type GameEndReason, type TurnOutcome, type WrongGuessEvent
+} from "@/lib/game-log";
 import { countryByCode } from "@/lib/countries";
 import { advanceByTimeouts, createTurnState, currentPlayerId, currentRound, isPlayersTurn, nextTurn, type PhaseEnd, type TurnState } from "@/lib/turns";
 import {
   allCodes, cardLabel, computeAwards, computeScores, DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, dealCards, isDoubleRound, isStartClaim, largestGroupsByPlayer,
-  matchCount, pickStartCountries, pointsForClaim, pointsForRound, RECENT_CARDS, SUDDEN_DEATH_ROUNDS, topPlayers, unclaimedCodes, type Card, type Claim, type Deal
+  matchCount, pickStartCountries, pointsForClaim, pointsForRound, RECENT_CARDS, SUDDEN_DEATH_ROUNDS, topPlayers, unclaimedCodes, type Card, type Claim, type Deal,
+  LEGACY_TURN_ROUNDS
 } from "@/lib/turn-rules";
 
 export const MAX_RECENT_GUESSES = 12;
@@ -120,15 +125,55 @@ function logGuess(room: TurnRoom, event: GuessEvent) {
   room.recentGuesses = [event, ...(room.recentGuesses ?? [])].slice(0, MAX_RECENT_GUESSES);
 }
 
+// Game log (turn-based mode). Every helper is behind the kill switch and swallows its own errors: logging never fails a request.
+const dealOrNull = (turn: TurnState<Deal>) => { const deal = dealOf(turn); return deal.length ? deal : null; };
+
+/** Queues the event for a finished turn. `before` is the turn state BEFORE nextTurn. Call AFTER room.claims holds this turn's claim. `unclaimed` is read lazily, only when logging is on. */
+function logTurn(room: TurnRoom, before: TurnState<Deal>, outcome: TurnOutcome, playerId: string, at: number, unclaimed: () => string[], claim?: { code: string; points: number }) {
+  if (!isGameLoggingEnabled()) return;
+  try {
+    const totals = endsRound(before) ? totalsOf(computeScores(room.players.map((player) => player.id), room.claims ?? [])) : undefined;
+    queueLog(room, buildTurnEvent({ turn: before, deal: dealOrNull(before), playerId, outcome, at, unclaimed: unclaimed(), claim, totals }));
+  } catch (cause) {
+    console.error("Game log build failed:", cause);
+  }
+}
+
+function logWrong(room: TurnRoom, playerId: string, code: string, why: WrongGuessEvent["why"], now: number) {
+  if (!isGameLoggingEnabled()) return;
+  try {
+    queueLog(room, buildWrongEvent({ turn: room.turn!, deal: dealOrNull(room.turn!), playerId, code, why, at: now }));
+  } catch (cause) {
+    console.error("Game log build failed:", cause);
+  }
+}
+
+/** Queues the end record when the game just finished by itself. */
+function logEnd(room: TurnRoom, reason: GameEndReason, endedAt: number) {
+  if (!isGameLoggingEnabled()) return;
+  try {
+    if (room.startedAt === null || !room.turn) return;
+    const ids = room.players.map((player) => player.id);
+    const scores = computeScores(ids, room.claims ?? []);
+    queueLog(room, buildEndRecord({ reason, turn: room.turn, scores, winners: topPlayers(ids, scores), startedAt: room.startedAt, endedAt }));
+  } catch (cause) {
+    console.error("Game log build failed:", cause);
+  }
+}
+
 /** Applies every fully expired turn as a pass. Returns the same room object, mutated. */
 export function syncTurnTime(room: TurnRoom, now: number): { room: TurnRoom; changed: boolean } {
   if (room.status !== "playing" || !room.turn || room.turn.finished) return { room, changed: false };
-  const { state, advanced } = advanceByTimeouts(room.turn, now, () => dealNext(room), phaseEnd(room), ({ playerId, endedAt }) => {
+  let unclaimed: string[] | null = null;
+  const getUnclaimed = () => (unclaimed ??= unclaimedCodes(room.claims ?? []));
+  const { state, advanced } = advanceByTimeouts(room.turn, now, () => dealNext(room), phaseEnd(room), ({ playerId, endedAt, state: expiring }) => {
     logGuess(room, { playerId, kind: "timeout", code: null, text: "ran out of time", points: 0, at: endedAt });
+    logTurn(room, expiring, "timeout", playerId, endedAt, getUnclaimed);
   });
   if (!advanced) return { room, changed: false };
   room.turn = state;
   if (state.finished) room.status = "ended";
+  if (state.finished) logEnd(room, "turns_played", state.startedAt);
   return { room, changed: true };
 }
 
@@ -153,6 +198,7 @@ function checkTurn(room: TurnRoom, playerId: string): TurnFailure | null {
 function finishTurn(room: TurnRoom, now: number, exhausted: boolean) {
   room.turn = nextTurn(room.turn!, now, exhausted ? null : dealNext(room), exhausted, phaseEnd(room));
   if (room.turn.finished) room.status = "ended";
+  if (room.turn.finished) logEnd(room, exhausted ? "board_exhausted" : "turns_played", now);
 }
 
 /** The current player names a country. Mutates the room on success. */
@@ -162,15 +208,16 @@ export function applyClaim(room: TurnRoom, playerId: string, code: string, now: 
   const country = countryByCode(code);
   if (!country) return { error: "That answer is not on the country list.", status: 400 };
   const claims = room.claims ?? [];
-  const wrong = (text: string, error: string, status: number): TurnFailure => {
+  const wrong = (text: string, error: string, status: number, why: WrongGuessEvent["why"]): TurnFailure => {
     logGuess(room, { playerId, kind: "wrong", code: country.code, text, points: 0, at: now });
+    logWrong(room, playerId, country.code, why, now);
     return { error, status, persist: true };
   };
   const owner = claims.find((claim) => claim.code === country.code);
   if (owner) {
     const ownerName = room.players.find((player) => player.id === owner.playerId)?.name ?? "someone";
-    return owner.playerId === playerId ? wrong("already yours", "You already claimed that country.", 409)
-      : wrong(`already ${ownerName}'s`, `${country.name} is already claimed.`, 409);
+    return owner.playerId === playerId ? wrong("already yours", "You already claimed that country.", 409, "own")
+      : wrong(`already ${ownerName}'s`, `${country.name} is already claimed.`, 409, "taken");
   }
   const turn = room.turn!;
   const deal = dealOf(turn);
@@ -178,15 +225,17 @@ export function applyClaim(room: TurnRoom, playerId: string, code: string, now: 
   if (deal.length && matched === 0) {
     return wrong("doesn't fit", deal.length === 1
       ? `${country.name} doesn't fit this card: ${cardLabel(deal[0])}.`
-      : `${country.name} doesn't fit either card: ${deal.map(cardLabel).join(" / ")}.`, 400);
+      : `${country.name} doesn't fit either card: ${deal.map(cardLabel).join(" / ")}.`, 400, "no_fit");
   }
   const sudden = Boolean(turn.sudden);
   const round = sudden ? turn.totalRounds + turn.sudden!.round : currentRound(turn);
   const points = pointsForClaim(matched, deal.length, round, turn.totalRounds, sudden);
+  const unclaimedBefore = unclaimedCodes(claims);
   claims.push({ code: country.code, playerId, points, round, turn: turn.number, at: now, fit: matched, ...(sudden ? { sudden: true } : {}) });
   room.claims = claims;
   const both = deal.length >= 2 && matched === deal.length;
   logGuess(room, { playerId, kind: "claimed", code: country.code, text: country.name, points, at: now, ...(both ? { both: true } : {}) });
+  logTurn(room, turn, "claim", playerId, now, () => unclaimedBefore, { code: country.code, points });
   finishTurn(room, now, unclaimedCodes(claims).length === 0);
   return null;
 }
@@ -195,6 +244,7 @@ export function applyPass(room: TurnRoom, playerId: string, now: number): TurnFa
   const failure = checkTurn(room, playerId);
   if (failure) return failure;
   logGuess(room, { playerId, kind: "passed", code: null, text: "passed", points: 0, at: now });
+  logTurn(room, room.turn!, "pass", playerId, now, () => unclaimedCodes(room.claims ?? []));
   finishTurn(room, now, unclaimedCodes(room.claims ?? []).length === 0);
   return null;
 }
@@ -208,7 +258,10 @@ export async function loadTurnRoom(redis: Redis, key: string): Promise<TurnRoom 
 export async function commitTurnRoom(redis: Redis, key: string, expectedTurn: number, next: TurnRoom): Promise<boolean> {
   const result = await redis.eval(TURN_CAS_SCRIPT, [key], [String(expectedTurn), JSON.stringify(next), String(ROOM_TTL_SECONDS)]);
   const parsed = (typeof result === "string" ? JSON.parse(result) : result) as { ok?: boolean; conflict?: boolean; error?: string };
-  return Boolean(parsed.ok);
+  const ok = Boolean(parsed.ok);
+  // Only the request whose compare-and-set succeeded writes the records it queued (see flushQueuedLog).
+  if (ok && next.startedAt) await flushQueuedLog(redis, next, logIdOf(next.code, next.startedAt));
+  return ok;
 }
 
 /** Loads a turns room with timeouts applied (and persisted). */
@@ -243,6 +296,41 @@ export async function runTurnAction(
     if (await commitTurnRoom(redis, key, before, room)) return { room };
   }
   return { error: "The turn just changed. Please try again.", status: 409 };
+}
+
+/** After a successful start of a turns room. `players` = started.players from the start script, `starts` = the picked start countries (same index as players, as the Lua start script assigns them). */
+export async function logGameStart(redis: Redis, room: TurnRoom, started: { startedAt: number; players: { id: string; name: string; host: boolean }[] }, starts: string[]): Promise<void> {
+  if (!isGameLoggingEnabled()) return;
+  try {
+    const record = buildStartRecord({
+      logId: logIdOf(room.code, started.startedAt),
+      room: room.code,
+      startedAt: started.startedAt,
+      turnSeconds: room.turnSeconds ?? DEFAULT_TURN_SECONDS,
+      rounds: room.rounds ?? LEGACY_TURN_ROUNDS,
+      players: started.players,
+      startCountries: Object.fromEntries(started.players.flatMap((player, index) => (starts[index] ? [[player.id, starts[index]]] : []))),
+    });
+    await writeGameStart(redis, record);
+  } catch (cause) {
+    console.error("Game log build failed:", cause);
+  }
+}
+
+/** After the host ended the game (script returned ok). Reads the room once; does nothing unless it is a turns room with a turn state. */
+export async function logHostEnd(redis: Redis, key: string): Promise<void> {
+  if (!isGameLoggingEnabled()) return;
+  try {
+    const room = await loadTurnRoom(redis, key);
+    if (!room || !isTurnsRoom(room) || !room.turn || !room.startedAt) return;
+    const ids = room.players.map((player) => player.id);
+    const scores = computeScores(ids, room.claims ?? []);
+    await writeGameEnd(redis, logIdOf(room.code, room.startedAt), buildEndRecord({
+      reason: "host_ended", turn: room.turn, scores, winners: topPlayers(ids, scores), startedAt: room.startedAt, endedAt: Date.now()
+    }));
+  } catch (cause) {
+    console.error("Game log build failed:", cause);
+  }
 }
 
 /** Everything a client needs to draw a turns-mode room. Never includes tokens. */

@@ -57,6 +57,29 @@ Population, GDP, GDP per capita, time zones and flag colours live in the committ
 
 Sources: World Bank API (latest non-empty value), countries-and-timezones (distinct standard UTC offsets), flag-icons SVGs rasterised with resvg (a colour counts at 0.8% of the flag, orange at 3%). Countries with no value (for example GDP for North Korea) never fit cards on that stat.
 
+## Game logging (turn-based mode)
+
+Every finished turn of a turn-based game is logged: one record per turn (the cards shown, the outcome, the time taken, and for a claim which cards the country fit), one per wrong guess, and a start and an end record for each game. Start records carry player ids and display names only; end records carry scores. No player tokens, IP addresses or user agents are ever stored. Live and Empire rooms are not logged.
+
+Where: one Redis hash per game, `bran:glog:<ROOM>-<startedAt>`, plus the sorted set `bran:glog:index` that lists the games. Logs are kept for 30 days. The room itself still expires after 24 hours, so the read API below works for a game only while its room exists.
+
+Kill switch: set `GAME_LOGGING=off` (or `0`, `false`, `no`) to stop writing logs. It is read on every request, so on Vercel a change takes effect with the next deployment, like any environment variable change.
+
+Cost: one extra Redis command for each request that ends a turn (including a timeout caught up by a poll), and four at game start. Requests that change nothing write nothing.
+
+Reading the logs:
+
+- `GET /api/room/log?code=ABC234` with the room's `Authorization: Bearer <token>` returns one game's log as JSON. It uses the same checks as the room GET.
+- The report script reads every game in the index:
+
+      node --env-file=.env.local --import tsx scripts/game-log-report.ts            # plain-text report
+      node --env-file=.env.local --import tsx scripts/game-log-report.ts --json     # raw JSON lines
+      node --env-file=.env.local --import tsx scripts/game-log-report.ts --days 7   # only games started in the last 7 days
+
+  `.env.local` comes from `vercel env pull .env.local`. Without `--env-file`, export the same variables the app reads (`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or the `KV_*` variants).
+
+The logging tests run with the same in-memory Redis double as the other tests.
+
 ## Writing UI text
 
 Keep a line only if it tells the player something they need at that moment. If deleting it loses no information, delete it. Prefer deleting to rewriting; when text is needed, make it short, plain and specific. Show state in-game (whose turn, the card, time, scores) and put rules in one place per mode: the mode picker and lobby. The earlier audit is in `docs/copy-audit.md`.

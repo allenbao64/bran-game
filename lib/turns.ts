@@ -104,7 +104,7 @@ export function nextTurn<Deal>(state: TurnState<Deal>, now: number, deal: Deal |
 export function advanceByTimeouts<Deal>(
   state: TurnState<Deal>, now: number, deal: (next: TurnState<Deal>) => Deal | null,
   onPhaseEnd?: PhaseEnd<Deal>,
-  onExpire?: (turn: { playerId: string; endedAt: number }) => void
+  onExpire?: (turn: { playerId: string; endedAt: number; state: TurnState<Deal> }) => void
 ): { state: TurnState<Deal>; advanced: number } {
   const expired = expiredTurns(state, now);
   let current = state;
@@ -112,7 +112,7 @@ export function advanceByTimeouts<Deal>(
   while (advanced < expired && !current.finished) {
     const playerId = currentPlayerId(current);
     const endedAt = current.startedAt + current.turnMs;
-    if (playerId !== null) onExpire?.({ playerId, endedAt });
+    if (playerId !== null) onExpire?.({ playerId, endedAt, state: current });
     current = nextTurn(current, endedAt, null, false, onPhaseEnd);
     advanced++;
   }

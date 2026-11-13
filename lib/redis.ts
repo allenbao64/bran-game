@@ -1,6 +1,8 @@
 import { Redis } from "@upstash/redis";
 
 export const ROOM_TTL_SECONDS = 60 * 60 * 24;
+// Game logs (turn-based mode) are kept for 30 days, longer than the room they came from.
+export const LOG_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 let client: Redis | null = null;
 let testClient: Redis | null = null;
