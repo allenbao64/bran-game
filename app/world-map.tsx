@@ -1,17 +1,16 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { MAP_HEIGHT, MAP_WIDTH, mapDots, mapFeatures as countries, mapPath as path } from "@/lib/world-geometry";
+import { featureCode, homePoints, MAP_HEIGHT, MAP_WIDTH, mapDots, mapFeatures as countries, mapPath as path } from "@/lib/world-geometry";
 import { dragSpeed, GLIDE_DECAY, GLIDE_MIN_SPEED, IDENTITY_VIEW, MAX_ZOOM, MIN_ZOOM, panBy, pinchView, wheelFactor, wheelIntent, zoomAt, ZOOM_STEP, type MapView } from "@/lib/map-zoom";
-import { countryCodeFromNumericId } from "@/lib/countries";
 import { playerColor } from "@/lib/player-colors";
 
 type MapPlayer = { id: string; name: string };
-/** `targets` are country codes to mark with a dashed outline (what the viewer can steal). `highlight` outlines a set of countries, e.g. a region the viewer is looking at. `emphasis` maps a player id to the country codes to outline thickly in that player's colour (their largest territory). */
-type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[]; highlight?: string[] };
+/** `targets` are country codes to mark with a dashed outline (what the viewer can steal). `highlight` outlines a set of countries, e.g. a region the viewer is looking at. `homes` maps a player id to their starting country, drawn as a house marker. `emphasis` maps a player id to the country codes to outline thickly in that player's colour (their largest territory). */
+type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[]; highlight?: string[]; homes?: Record<string, string> };
 
 /** A shared board: every claimed country is filled with its owner's colour. */
-export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets, highlight }: WorldMapProps) {
+export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets, highlight, homes }: WorldMapProps) {
   const marked = useMemo(() => (targets ? new Set(targets) : undefined), [targets]);
   const lit = useMemo(() => new Set(highlight ?? []), [highlight]);
   const ids = useMemo(() => players.map((player) => player.id), [players]);
@@ -30,7 +29,7 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
   // Outlined countries are drawn last so their outline sits above the neighbours.
   const drawn = useMemo(() => {
     const rank = (code?: string) => !code ? 0 : lit.has(code) ? 3 : marked?.has(code) ? 2 : emphasised.has(code) ? 1 : 0;
-    return countries.features.map((country, index) => ({ country, index, code: countryCodeFromNumericId(country.id) })).sort((a, b) => rank(a.code) - rank(b.code));
+    return countries.features.map((country, index) => ({ country, index, code: featureCode(country) })).sort((a, b) => rank(a.code) - rank(b.code));
   }, [emphasised, marked, lit]);
 
   const zoomable = !compact;
@@ -117,10 +116,12 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
       className={zoomable ? `map-zoomable${zoomed ? " zoomed" : ""}` : undefined}
       onPointerDown={zoomable ? onPointerDown : undefined} onPointerMove={zoomable ? onPointerMove : undefined} onPointerUp={zoomable ? onPointerEnd : undefined} onPointerCancel={zoomable ? onPointerEnd : undefined}>
       <rect width="900" height="450" rx="8" className="map-ocean" />
+      <defs><pattern id="not-in-game" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ecebe3"/><line x1="0" y1="0" x2="0" y2="6" stroke="#bfc4b8" strokeWidth="2"/></pattern></defs>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
       {drawn.map(({ country, index, code }) => {
         const owner = code ? claims[code] : undefined;
         const d = path(country) ?? "";
+        if (!code) return <path key={`${country.id ?? "map"}-${index}`} d={d} className="map-country not-in-game" fill="url(#not-in-game)"><title>{`${country.properties?.name ?? "This land"}: not in the game`}</title></path>;
         const ownerName = owner ? names.get(owner) ?? "Another player" : undefined;
         const outlined = code ? emphasised.has(code) : false;
         return <path key={`${country.id ?? "map"}-${index}`} d={d} className={`map-country${owner ? " claimed" : ""}${outlined ? " territory" : ""}${code && marked?.has(code) ? " steal-target" : ""}${code && lit.has(code) ? " region-highlight" : ""}`}
@@ -136,6 +137,14 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
           style={owner ? { fill: playerColor(ids, owner) } : undefined}>
           <title>{ownerName ? `Claimed by ${ownerName}${owner === youId ? " (you)" : ""}${outlined ? " · part of their largest territory" : ""}` : "Available country"}</title>
         </circle>;
+      })}
+      {Object.entries(homes ?? {}).map(([owner, code]) => {
+        const at = homePoints[code];
+        const color = playerColor(ids, owner);
+        return at && <g key={`home-${owner}`} className="map-home" transform={`translate(${at[0]} ${at[1]}) scale(${1 / view.k})`}>
+          <circle r="6.5" fill="#fff" stroke={color} strokeWidth="2.2"/><text y="3.4" textAnchor="middle" fontSize="9" fill={color}>⌂</text>
+          <title>{`${names.get(owner) ?? "A player"}${owner === youId ? " (you)" : ""} started here`}</title>
+        </g>;
       })}
       </g>
     </svg>

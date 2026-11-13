@@ -14,10 +14,11 @@ export function useYourTurnTitle(mine: boolean) {
   }, [mine]);
 }
 
-/** Focuses the input whenever `key` changes while it is the viewer's turn. */
-export function useTurnFocus(mine: boolean, key: unknown) {
+/** Focuses the input whenever `key` changes while it is the viewer's turn, and again when a send (`busy`) ends. */
+export function useTurnFocus(mine: boolean, key: unknown, busy?: boolean) {
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { if (mine) input.current?.focus(); }, [mine, key]);
+  useEffect(() => { if (mine && busy === false) input.current?.focus(); }, [busy]);
   return input;
 }
 
@@ -28,5 +29,12 @@ export function TurnBanner({ mine, name, color, seconds }: BannerProps) {
   return <div className={mine ? "turn-banner mine" : "turn-banner"} style={mine ? { background: color, borderColor: color } : { borderLeftColor: color }}>
     <b className="turn-banner-text" style={mine ? undefined : { color }}>{mine ? "YOUR TURN" : `Waiting for ${name}…`}</b>
     <div className={seconds <= 5 ? "turn-clock urgent" : "turn-clock"} aria-label="Seconds left this turn">{String(seconds).padStart(2, "0")}s</div>
+  </div>;
+}
+
+/** Slim one-line turn status for the frozen bar: "Your turn · 12s" or "Sam's turn · 12s", in that player's colour. */
+export function TurnStatus({ mine, name, color, seconds }: BannerProps) {
+  return <div className={seconds <= 5 ? "turn-status urgent" : "turn-status"} style={{ color }}>
+    <b>{mine ? "Your turn" : `${name}'s turn`}</b><span> · </span><span className="turn-clock" aria-label="Seconds left this turn">{String(seconds).padStart(2, "0")}s</span>
   </div>;
 }
