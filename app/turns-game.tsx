@@ -9,11 +9,13 @@ import { regionProgress } from "@/lib/turn-rules";
 export type TurnView = {
   number: number; round: number; totalRounds: number; currentPlayerId: string | null;
   startedAt: number; turnMs: number; serverNow: number; finished: boolean;
-  card: { kind: string } | null; cardLabel: string | null; doubleRound: boolean;
+  cards: { kind: string; label: string }[]; doubleRound: boolean; pointsOne: number; pointsBoth: number;
+  sudden: { round: number; maxRounds: number; playerIds: string[] } | null;
 };
 export type ScoreView = { points: number; bonuses: { label: string; points: number }[]; bonusTotal: number; total: number; territory: number };
-export type ClaimLogEntry = { code: string; name: string; playerId: string; points: number; round: number; order: number; at: number };
-export type GuessEntry = { playerId: string; kind: "claimed" | "wrong" | "passed" | "timeout"; code: string | null; text: string; points: number; at: number };
+export type ClaimLogEntry = { code: string; name: string; playerId: string; points: number; round: number; order: number; at: number; fit?: number; sudden?: boolean };
+export type GuessEntry = { playerId: string; kind: "claimed" | "wrong" | "passed" | "timeout"; code: string | null; text: string; points: number; at: number; both?: boolean };
+export type ClaimResult = { code: string; points: number; fit: number; cards: number; both: boolean; sudden: boolean };
 type TurnPlayer = { id: string; name: string; host: boolean };
 
 type Props = {
@@ -41,11 +43,18 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
   const input = useTurnFocus(mine, turn.number, busy);
   useYourTurnTitle(mine);
   const waiting = `Waiting for ${current?.name ?? "the other player"}…`;
+  const cards = turn.cards ?? [];
+  const contenders = turn.sudden?.playerIds ?? [];
+  const watching = Boolean(turn.sudden) && !contenders.includes(playerId);
   const regions = useMemo(() => regionProgress(countryClaims), [countryClaims]);
   const [hovered, setHovered] = useState<string | null>(null);
   const [pinned, setPinned] = useState<string | null>(null);
   const shown = regions.find((region) => region.name === (hovered ?? pinned));
   const nameOf = (id: string) => id === playerId ? "you" : players.find((player) => player.id === id)?.name ?? "someone";
+  const nameList = (ids: string[]) => {
+    const names = ids.map((id) => players.find((player) => player.id === id)?.name ?? "someone");
+    return names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  };
 
   const tint = current ? colorOf(current.id) : "#9aa29b";
   const homes = Object.fromEntries(Object.entries(startCountries).filter(([id]) => players.some((player) => player.id === id)));
@@ -60,12 +69,21 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
     <header className="turn-bar">
       <div className="turn-bar-head">
         <TurnStatus mine={mine} name={current?.name ?? "another player"} color={tint} seconds={seconds}/>
-        <span className="round-line">Round {turn.round} of {turn.totalRounds}{turn.doubleRound && <span className="double-banner">Double points</span>}</span>
+        {turn.sudden && !turn.finished
+          ? <><span className="round-line"><span className="sudden-banner">Sudden death</span> round {turn.sudden.round} of {turn.sudden.maxRounds}</span>
+            <span className="sudden-in">In it: {nameList(contenders)}</span></>
+          : <span className="round-line">Round {turn.round} of {turn.totalRounds}{turn.doubleRound && <span className="double-banner">Double points</span>}</span>}
       </div>
       <div className="turn-bar-play">
-        <b className="turn-card-text" aria-label="Card">{turn.cardLabel ?? "No card"}</b>
+        <div className="turn-cards" aria-label="Cards">
+          {cards.length ? cards.map((card, index) => <React.Fragment key={index}>
+            {index > 0 && <span className="turn-card-or">or</span>}
+            <b className="turn-card-text" aria-label={`Card ${index + 1}`}>{card.label}</b>
+          </React.Fragment>) : <b className="turn-card-text" aria-label="Card">No card</b>}
+          {cards.length === 2 && <small className="turn-points">{turn.pointsOne} for one · {turn.pointsBoth} for both</small>}
+        </div>
         <form className="guess-form" onSubmit={onSubmit}>
-          <input ref={input} className={mine ? "field turn-input active" : "field turn-input"} style={{ "--pc": tint } as React.CSSProperties} placeholder={mine ? "Country name" : waiting} aria-label="Country name" value={entry} onChange={(event) => onEntry(event.target.value)} readOnly={busy} disabled={!mine || seconds <= 0}/>
+          <input ref={input} className={mine ? "field turn-input active" : "field turn-input"} style={{ "--pc": tint } as React.CSSProperties} placeholder={mine ? "Country name" : watching ? "Watching sudden death" : waiting} aria-label="Country name"value={entry} onChange={(event) => onEntry(event.target.value)} readOnly={busy} disabled={!mine || seconds <= 0}/>
           <button className="primary" disabled={!mine || !entry.trim() || busy || seconds <= 0}>Claim</button>
           <button type="button" className="quiet" disabled={!mine || busy || seconds <= 0} onClick={onPass}>Pass</button>
         </form>
@@ -77,7 +95,9 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
       <div className="scoreboard" aria-label="Scoreboard">{players.map((player) => {
         const score = scores[player.id];
         const start = startCountries[player.id] ? countryFacts(startCountries[player.id])?.name : undefined;
-        return <div className={player.id === turn.currentPlayerId ? "score-row active" : "score-row"} key={player.id}>
+        const out = Boolean(turn.sudden) && !contenders.includes(player.id);
+        const rowClass = `score-row${player.id === turn.currentPlayerId ? " active" : ""}${out ? " out" : ""}`;
+        return <div className={rowClass} key={player.id}>
           <i className="score-dot" style={{ background: colorOf(player.id) }}/>
           <b>{player.name}{player.id === playerId ? " (you)" : ""}</b><strong>{score?.total ?? 0}</strong>
           <small>{start ? `start ${start} · ` : ""}group {score?.territory ?? 0}</small>
@@ -86,7 +106,7 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
       })}</div>
       <div className="side-title">Recent guesses</div>
       <ol className="guess-feed" aria-label="Recent guesses">{recentGuesses.slice(0, 8).map((entry, index) => <li key={`${entry.at}-${index}`} className={entry.kind}>
-        <b style={{ color: colorOf(entry.playerId) }}>{players.find((player) => player.id === entry.playerId)?.name ?? "Someone"}</b> {guessText(entry)}{entry.kind === "claimed" && <em> +{entry.points}</em>}
+        <b style={{ color: colorOf(entry.playerId) }}>{players.find((player) => player.id === entry.playerId)?.name ?? "Someone"}</b> {guessText(entry)}{entry.kind === "claimed" && <em> +{entry.points}{entry.both && <span className="muted"> both cards</span>}</em>}
       </li>)}</ol>
       <div className="region-panel" aria-label="Region bonuses">
         <div className="side-title">Region bonuses</div>
