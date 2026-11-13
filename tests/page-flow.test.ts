@@ -179,6 +179,14 @@ test("a turns game shows the banner, round counter, card, scoreboard and only le
   assert.notEqual(doc.title, "Your turn · Atlas Sprint");
   assert.equal(passButton().disabled, true);
   assert.ok(doc.querySelector(".world-map"));
+  const rows = [...doc.querySelectorAll<HTMLButtonElement>(".region-row")];
+  assert.equal(rows.length, 11, "every bonus region is listed");
+  const northAmerica = rows.find((row) => row.textContent?.startsWith("North America"))!;
+  assert.match(northAmerica.textContent ?? "", /\+2/);
+  assert.match(northAmerica.textContent ?? "", /Brian 1\/3/);
+  assert.equal(doc.querySelectorAll(".region-highlight").length, 0);
+  await act(async () => { northAmerica.click(); });
+  assert.equal(doc.querySelectorAll(".map-country.region-highlight").length, 3, "tapping a region outlines its countries on the map");
 
   current = "p1";
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1000)); });

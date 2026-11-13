@@ -7,12 +7,13 @@ import { countryCodeFromNumericId } from "@/lib/countries";
 import { playerColor } from "@/lib/player-colors";
 
 type MapPlayer = { id: string; name: string };
-/** `targets` are country codes to mark with a dashed outline (what the viewer can steal). `emphasis` maps a player id to the country codes to outline thickly in that player's colour (their largest territory). */
-type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[] };
+/** `targets` are country codes to mark with a dashed outline (what the viewer can steal). `highlight` outlines a set of countries, e.g. a region the viewer is looking at. `emphasis` maps a player id to the country codes to outline thickly in that player's colour (their largest territory). */
+type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[]; highlight?: string[] };
 
 /** A shared board: every claimed country is filled with its owner's colour. */
-export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets }: WorldMapProps) {
+export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets, highlight }: WorldMapProps) {
   const marked = useMemo(() => (targets ? new Set(targets) : undefined), [targets]);
+  const lit = useMemo(() => new Set(highlight ?? []), [highlight]);
   const ids = useMemo(() => players.map((player) => player.id), [players]);
   const names = useMemo(() => new Map(players.map((player) => [player.id, player.name])), [players]);
   const counts = useMemo(() => {
@@ -26,9 +27,11 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
     for (const [owner, codes] of Object.entries(emphasis ?? {})) codes.forEach((code) => { if (claims[code] === owner) byCode.set(code, owner); });
     return byCode;
   }, [emphasis, claims]);
-  // Emphasised countries are drawn last so their thick outline sits above the neighbours.
-  const drawn = useMemo(() => countries.features.map((country, index) => ({ country, index, code: countryCodeFromNumericId(country.id) }))
-    .sort((a, b) => Number(emphasised.has(a.code ?? "")) - Number(emphasised.has(b.code ?? ""))), [emphasised]);
+  // Outlined countries are drawn last so their outline sits above the neighbours.
+  const drawn = useMemo(() => {
+    const rank = (code?: string) => !code ? 0 : lit.has(code) ? 3 : marked?.has(code) ? 2 : emphasised.has(code) ? 1 : 0;
+    return countries.features.map((country, index) => ({ country, index, code: countryCodeFromNumericId(country.id) })).sort((a, b) => rank(a.code) - rank(b.code));
+  }, [emphasised, marked, lit]);
 
   const zoomable = !compact;
   const [view, setView] = useState<MapView>(IDENTITY_VIEW);
@@ -120,7 +123,7 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
         const d = path(country) ?? "";
         const ownerName = owner ? names.get(owner) ?? "Another player" : undefined;
         const outlined = code ? emphasised.has(code) : false;
-        return <path key={`${country.id ?? "map"}-${index}`} d={d} className={`map-country${owner ? " claimed" : ""}${outlined ? " territory" : ""}${code && marked?.has(code) ? " steal-target" : ""}`}
+        return <path key={`${country.id ?? "map"}-${index}`} d={d} className={`map-country${owner ? " claimed" : ""}${outlined ? " territory" : ""}${code && marked?.has(code) ? " steal-target" : ""}${code && lit.has(code) ? " region-highlight" : ""}`}
           style={owner ? { fill: playerColor(ids, owner), ...(outlined ? { stroke: playerColor(ids, owner) } : {}) } : undefined}>
           <title>{ownerName ? `Claimed by ${ownerName}${owner === youId ? " (you)" : ""}${outlined ? " · part of their largest territory" : ""}` : "Available country"}</title>
         </path>;
@@ -129,7 +132,7 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
         const owner = claims[code];
         const ownerName = owner ? names.get(owner) ?? "Another player" : undefined;
         const outlined = emphasised.has(code);
-        return <circle key={`dot-${code}`} cx={x} cy={y} r={3.2 / view.k} data-code={code} className={`map-dot${owner ? " claimed" : ""}${outlined ? " territory" : ""}${marked?.has(code) ? " steal-target" : ""}`}
+        return <circle key={`dot-${code}`} cx={x} cy={y} r={3.2 / view.k} data-code={code} className={`map-dot${owner ? " claimed" : ""}${outlined ? " territory" : ""}${marked?.has(code) ? " steal-target" : ""}${lit.has(code) ? " region-highlight" : ""}`}
           style={owner ? { fill: playerColor(ids, owner) } : undefined}>
           <title>{ownerName ? `Claimed by ${ownerName}${owner === youId ? " (you)" : ""}${outlined ? " · part of their largest territory" : ""}` : "Available country"}</title>
         </circle>;

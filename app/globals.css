@@ -55,3 +55,12 @@
 .steal-status{margin:12px 0 0;padding:9px 12px;border-left:3px solid var(--line);background:var(--white);color:#66716a;font:500 11px 'DM Mono',monospace;letter-spacing:.04em}.steal-status.can{border-left-color:var(--green);background:#f0f4e9;color:var(--green)}
 .map-country.steal-target{stroke:var(--ink);stroke-width:2.2;stroke-dasharray:5 3;stroke-linejoin:round}.map-dot.steal-target{stroke:var(--ink);stroke-width:1.6;stroke-dasharray:2 1.5}
 .map-country.steal-target,.map-dot.steal-target{vector-effect:non-scaling-stroke}
+/* Region bonuses (turn-based) */
+.region-panel{margin:26px 0 8px}.region-help{margin:10px 0 8px;color:#7d877f;font-size:11px;line-height:1.45}
+.region-row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;width:100%;padding:8px 10px;margin-top:4px;text-align:left;background:var(--white);border:1px solid #eeede6;border-radius:3px;color:var(--ink);font-size:12px;cursor:pointer}
+.region-row:hover,.region-row.pinned{border-color:var(--ink)}.region-row b{color:var(--green);font:500 11px 'DM Mono',monospace}
+.region-state{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;color:#7d877f;font-size:10px}.region-state i{font-style:normal;font-weight:600}
+.region-row.blocked{opacity:.55}.region-row.blocked b{text-decoration:line-through;color:#8a938b}.region-row.won{background:#eef2e4}
+.claim-note{color:var(--green);font-size:12px;line-height:1.5}
+.map-country.region-highlight{stroke:var(--ink);stroke-width:2;stroke-linejoin:round}.map-dot.region-highlight{stroke:var(--ink);stroke-width:1.6}
+.map-country.region-highlight,.map-dot.region-highlight{vector-effect:non-scaling-stroke}

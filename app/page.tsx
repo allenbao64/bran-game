@@ -10,7 +10,7 @@ import { WorldMap } from "@/app/world-map";
 import { TurnsGame, type ClaimLogEntry, type ScoreView, type TurnView } from "@/app/turns-game";
 import { ResultsReplay } from "@/app/replay";
 import { EmpireGame, EmpireResults, type EmpireAction, type EmpireView } from "@/app/empire-game";
-import { DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, LEGACY_TURN_ROUNDS, TURN_ROUND_OPTIONS, TURN_SPEEDS } from "@/lib/turn-rules";
+import { claimRegionNote, DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, LEGACY_TURN_ROUNDS, TURN_ROUND_OPTIONS, TURN_SPEEDS } from "@/lib/turn-rules";
 import { DEFAULT_EMPIRE_TURN_SECONDS, EMPIRE_TURN_SPEEDS } from "@/lib/empire/types";
 
 type Player = { id: string; name: string; host: boolean };
@@ -23,7 +23,7 @@ type Stage = "home" | "lobby" | "game" | "results";
 const ROOM_KEY = "bran-game-room";
 const MODE_RULES: Record<Mode, string> = {
   live: "Everyone names countries at once for ten minutes.",
-  turns: "Each turn, claim a country that fits your card. Whole regions earn bonuses.",
+  turns: "Each turn, claim a country that fits your card. 1 point each, 2 in the last 3 rounds. Own a whole small region for +1 to +4. Biggest linked group +2.",
   empire: "Pick a card, then claim, steal or fortify. First to 15 points."
 };
 const BUILD_VERSION = process.env.NEXT_PUBLIC_GAME_VERSION ?? "local";
@@ -76,6 +76,7 @@ export default function Home() {
   const [entry, setEntry] = useState("");
   const [left, setLeft] = useState(GAME_CATALOG.countries.durationSeconds);
   const [notice, setNotice] = useState("");
+  const [claimNote, setClaimNote] = useState("");
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const input = useRef<HTMLInputElement>(null);
@@ -208,7 +209,7 @@ export default function Home() {
         body: JSON.stringify({ code: room.code, token: room.token, answerCode: answer.code })
       });
       setEntry("");
-      if (room.mode === "turns") { await sync(room.code, room.token); return; }
+      if (room.mode === "turns") { setClaimNote(claimRegionNote(countryClaims, answer.code, playerId)); await sync(room.code, room.token); return; }
       setGuesses((current) => current.some((guess) => guess.code === answer.code) ? current : [answer, ...current]);
       if (room.gameId === "countries") setCountryClaims((current) => ({ ...current, [answer.code]: playerId }));
     } catch (error) { setNotice(errorText(error)); }
@@ -245,7 +246,7 @@ export default function Home() {
 
   function leaveRoom() {
     localStorage.removeItem(ROOM_KEY);
-    setStage("home"); setRoom(null); setTurn(null); setLargestGroups({}); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setPlayers([]); setGuesses([]); setResults([]); setCountryClaims({}); setNotice(""); setEntry("");
+    setStage("home"); setRoom(null); setTurn(null); setLargestGroups({}); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setPlayers([]); setGuesses([]); setResults([]); setCountryClaims({}); setNotice(""); setClaimNote(""); setEntry("");
   }
 
   const ready = Boolean(name.trim());
@@ -297,7 +298,7 @@ export default function Home() {
       {players.length === 1 && <p className="waiting">Waiting for another player.</p>}{players.length === 2 && <p className="waiting">A third player can still join.</p>}
       {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length < 2 || busy} onClick={() => void startRound()}>Start</button>}
       <button className="quiet" onClick={leaveRoom}>Leave room</button>{notice && <p className="notice">{notice}</p>}</div>}
-    {stage === "game" && room && isTurns && turn && <TurnsGame turn={turn} scores={scores} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} entry={entry} onEntry={setEntry} notice={notice} busy={busy} onSubmit={submitGuess} onPass={() => void passTurn()} onEnd={() => void endRound()} colorOf={colorOf} largestGroups={largestGroups}/>}
+    {stage === "game" && room && isTurns && turn && <TurnsGame turn={turn} scores={scores} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} entry={entry} onEntry={setEntry} notice={notice} busy={busy} onSubmit={submitGuess} onPass={() => void passTurn()} onEnd={() => void endRound()} colorOf={colorOf} largestGroups={largestGroups} claimNote={claimNote}/>}
     {stage === "game" && room && isTurns && !turn && <p className="lede">Dealing the first card…</p>}
     {stage === "game" && room && isEmpire && empire && <EmpireGame view={empire} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} notice={notice} busy={busy} onAction={empireAction} onNotice={setNotice} onEnd={() => void endRound()} colorOf={colorOf}/>}
     {stage === "game" && room && isEmpire && !empire && <p className="lede">Placing capitals…</p>}

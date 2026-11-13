@@ -170,6 +170,29 @@ export function regionBonuses(claims: Pick<Claim, "code" | "playerId">[]): Recor
   return result;
 }
 
+export type RegionStatus = "open" | "won" | "blocked";
+export type RegionProgress = { name: string; codes: string[]; points: number; owned: Record<string, number>; status: RegionStatus; winner: string | null };
+/** Every bonus region with each player's count. "Blocked" once two players hold part of it: nobody can complete it. */
+export function regionProgress(claims: Record<string, string>): RegionProgress[] {
+  return smallRegions().filter((region) => regionBonusPoints(region.codes.length) > 0).map((region) => {
+    const owned: Record<string, number> = {};
+    region.codes.forEach((code) => { const owner = claims[code]; if (owner) owned[owner] = (owned[owner] ?? 0) + 1; });
+    const owners = Object.keys(owned);
+    const winner = owners.length === 1 && owned[owners[0]] === region.codes.length ? owners[0] : null;
+    return { ...region, points: regionBonusPoints(region.codes.length), owned, status: winner ? "won" : owners.length > 1 ? "blocked" : "open", winner };
+  });
+}
+
+/** One line on what a claim did for its region, e.g. "Kazakhstan: 1 of 5 in Central Asia (+4)". */
+export function claimRegionNote(claims: Record<string, string>, code: string, playerId: string): string {
+  const name = countryFacts(code)?.name ?? code;
+  const region = regionProgress({ ...claims, [code]: playerId }).find((entry) => entry.codes.includes(code));
+  if (!region) return `${name}: not in a bonus region.`;
+  if (region.winner === playerId) return `${name}: you own all of ${region.name}. +${region.points}`;
+  if (region.status === "blocked") return `${name}: ${region.name} is split, so no one gets its +${region.points}.`;
+  return `${name}: ${region.owned[playerId]} of ${region.codes.length} in ${region.name} (+${region.points}).`;
+}
+
 /** The sole owner of the biggest connected group (min 3, strictly bigger than everyone else). */
 export function territoryLeader(playerIds: string[], claims: Pick<Claim, "code" | "playerId">[]) {
   const sizes = Object.fromEntries(playerIds.map((id) => [id, largestConnectedGroup(claims.filter((c) => c.playerId === id).map((c) => c.code))]));

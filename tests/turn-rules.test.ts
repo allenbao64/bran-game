@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { allCountryFacts, countryFacts } from "@/lib/countries";
 import {
-  allCodes, cardFits, cardLabel, computeAwards, computeScores, dealCard, fittingCodes, isDoubleRound, largestConnectedGroup,
+  allCodes, cardFits, claimRegionNote, regionProgress, cardLabel, computeAwards, computeScores, dealCard, fittingCodes, isDoubleRound, largestConnectedGroup,
   pointsForRound, smallRegions, unclaimedCodes, regionBonusPoints, largestConnectedGroupCodes, largestGroupsByPlayer, TURN_SPEEDS, isTurnSeconds, TURN_ROUND_OPTIONS, DEFAULT_TURN_ROUNDS, LEGACY_TURN_ROUNDS, isTurnRounds, type Card, type Claim
 } from "@/lib/turn-rules";
 
@@ -250,4 +250,25 @@ test("late in the longest game every card still has an answer: 90 claims leave p
     const card = dealCard(unclaimed, rng);
     if (card.kind !== "wild") assert.ok(fittingCodes(card, unclaimed).length >= 3, `${card.kind} card with ${claimed} claimed`);
   }
+});
+
+test("region progress counts each player's share and marks split regions as blocked", () => {
+  const byName = (claims: Record<string, string>) => Object.fromEntries(regionProgress(claims).map((region) => [region.name, region]));
+  const fresh = byName({});
+  assert.equal(Object.keys(fresh).length, 11);
+  assert.deepEqual([fresh["Australia and New Zealand"].points, fresh["North America"].points, fresh["Central Asia"].points], [1, 2, 4]);
+  assert.equal(fresh["Central Asia"].status, "open");
+  const some = byName({ KZ: "p1", UZ: "p1", US: "p1", CA: "p2", AU: "p2", NZ: "p2" });
+  assert.deepEqual(some["Central Asia"].owned, { p1: 2 });
+  assert.equal(some["Central Asia"].status, "open");
+  assert.equal(some["North America"].status, "blocked");
+  assert.equal(some["Australia and New Zealand"].status, "won");
+  assert.equal(some["Australia and New Zealand"].winner, "p2");
+});
+
+test("a claim note says what the country did for its region", () => {
+  assert.equal(claimRegionNote({}, "KZ", "p1"), "Kazakhstan: 1 of 5 in Central Asia (+4).");
+  assert.equal(claimRegionNote({ AU: "p1" }, "NZ", "p1"), "New Zealand: you own all of Australia and New Zealand. +1");
+  assert.equal(claimRegionNote({ US: "p2" }, "CA", "p1"), "Canada: North America is split, so no one gets its +2.");
+  assert.equal(claimRegionNote({}, "FR", "p1"), "France: not in a bonus region.");
 });
