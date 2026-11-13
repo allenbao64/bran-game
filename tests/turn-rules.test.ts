@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { allCountryFacts, countryFacts } from "@/lib/countries";
+import { countryStat } from "@/lib/country-stats";
 import {
-  allCodes, cardFits, claimRegionNote, regionProgress, cardLabel, computeAwards, computeScores, dealCard, fittingCodes, isDoubleRound, largestConnectedGroup,
+  allCodes, cardFits, DEALT_KINDS, fitBand, MAX_FIT, MIN_FIT, RECENT_CARDS, WILD_RATE, pickStartCountries, isStartClaim, claimRegionNote, regionProgress, cardLabel, computeAwards, computeScores, dealCard, fittingCodes, isDoubleRound, largestConnectedGroup,
   pointsForRound, smallRegions, unclaimedCodes, regionBonusPoints, largestConnectedGroupCodes, largestGroupsByPlayer, TURN_SPEEDS, isTurnSeconds, TURN_ROUND_OPTIONS, DEFAULT_TURN_ROUNDS, LEGACY_TURN_ROUNDS, isTurnRounds, type Card, type Claim
 } from "@/lib/turn-rules";
 
@@ -32,7 +33,7 @@ test("letter counts ignore spaces and punctuation", () => {
   assert.equal(countryFacts("XK")!.region, "Europe", "Kosovo is part of the game list");
 });
 
-test("card dealing never deals a card with fewer than 3 unclaimed fits (except the wild fallback)", () => {
+test("card dealing never deals a card outside the fit band (except wild)", () => {
   const rng = seeded(7);
   const all = allCodes();
   for (let trial = 0; trial < 300; trial++) {
@@ -41,7 +42,9 @@ test("card dealing never deals a card with fewer than 3 unclaimed fits (except t
     const unclaimed = all.filter(() => rng() < share);
     const card = dealCard(unclaimed, rng);
     if (card.kind === "wild") continue;
-    assert.ok(fittingCodes(card, unclaimed).length >= 3, `${cardLabel(card)} must have 3 unclaimed fits (had ${unclaimed.length} unclaimed)`);
+    const fits = fittingCodes(card, unclaimed).length;
+    const band = fitBand(unclaimed.length);
+    assert.ok(fits >= band.min && fits <= band.max, `${cardLabel(card)} fits ${fits}, band ${band.min}-${band.max} (${unclaimed.length} unclaimed)`);
   }
 });
 
@@ -52,16 +55,16 @@ test("dealing falls back to wild when the board is nearly empty and deals all ki
   const kinds = new Set<string>();
   let wild = 0;
   for (let i = 0; i < 600; i++) { const card = dealCard(allCodes(), rng); kinds.add(card.kind); if (card.kind === "wild") wild++; }
-  assert.deepEqual([...kinds].sort(), ["border", "continent", "landlocked", "letter", "max", "min", "wild"]);
-  assert.ok(wild > 30 && wild < 130, `about 1 in 10 cards should be wild, got ${wild}/600`);
+  assert.deepEqual([...kinds].sort(), [...DEALT_KINDS, "wild"].sort());
+  assert.ok(wild < 45, `wild is rare, got ${wild}/600`);
 });
 
-test("size cards use the documented ranges", () => {
+test("name-length cards stay in their ranges", () => {
   const rng = seeded(3);
   for (let i = 0; i < 400; i++) {
     const card = dealCard(allCodes(), rng);
-    if (card.kind === "max") assert.ok(card.n >= 5 && card.n <= 7);
-    if (card.kind === "min") assert.ok(card.n >= 9 && card.n <= 11);
+    if (card.kind === "max") assert.ok(card.n >= 4 && card.n <= 9);
+    if (card.kind === "min") assert.ok(card.n >= 8 && card.n <= 13);
   }
 });
 
@@ -185,32 +188,32 @@ test("the largest-territory bonus stays at +2", () => {
   assert.equal(scores.p1.bonuses.find((b) => b.kind === "territory")!.points, 2);
 });
 
-test("wild cards are an intentional ~10% draw on an empty board (seeded, 10,000 draws)", () => {
+test("wild cards are a rare draw on a full board (seeded, 10,000 draws)", () => {
   const rng = seeded(12345);
   const all = allCodes();
   let wild = 0;
   for (let i = 0; i < 10_000; i++) if (dealCard(all, rng).kind === "wild") wild++;
   const rate = wild / 10_000;
-  assert.ok(rate >= 0.07 && rate <= 0.13, `wild rate should be about 10%, got ${(rate * 100).toFixed(2)}%`);
+  assert.ok(rate >= WILD_RATE * 0.6 && rate <= WILD_RATE * 1.4, `wild rate should be about ${WILD_RATE * 100}%, got ${(rate * 100).toFixed(2)}%`);
 });
 
-test("late in the game the wild rate stays near 10% because redraws no longer favour wild", () => {
+test("late in the game wild stays rare because the band relaxes instead of falling back", () => {
   const rng = seeded(5);
   const few = allCodes().filter((_, i) => i % 10 === 0);
   let wild = 0;
   for (let i = 0; i < 5_000; i++) if (dealCard(few, rng).kind === "wild") wild++;
-  assert.ok(wild / 5_000 < 0.13, `got ${(wild / 50).toFixed(1)}%`);
+  assert.ok(wild / 5_000 < 0.08, `got ${(wild / 50).toFixed(1)}%`);
 });
 
 test("wild is only a fallback when no other card can be dealt", () => {
-  // Never roll wild (rng always high) but only two countries remain: nothing fits 3, so wild is the fallback.
+  // Never roll wild (rng always high) but only two countries remain: nothing fits the minimum, so wild is the fallback.
   assert.deepEqual(dealCard(["FR", "DE"], () => 0.99), { kind: "wild" });
   // The same constant rng on a full board always deals a real card, never wild.
   const card = dealCard(allCodes(), () => 0.5);
   assert.notEqual(card.kind, "wild");
-  assert.ok(fittingCodes(card, allCodes()).length >= 3);
+  assert.ok(fittingCodes(card, allCodes()).length >= MIN_FIT);
   // A low first roll is the intentional wild draw.
-  const rolls = [0.05];
+  const rolls = [0.01];
   assert.deepEqual(dealCard(allCodes(), () => rolls.shift() ?? 0.5), { kind: "wild" });
 });
 
@@ -248,7 +251,7 @@ test("late in the longest game every card still has an answer: 90 claims leave p
   for (let claimed = 0; claimed < 90; claimed += 1) {
     const unclaimed = order.slice(claimed);
     const card = dealCard(unclaimed, rng);
-    if (card.kind !== "wild") assert.ok(fittingCodes(card, unclaimed).length >= 3, `${card.kind} card with ${claimed} claimed`);
+    if (card.kind !== "wild") assert.ok(fittingCodes(card, unclaimed).length >= fitBand(unclaimed.length).min, `${card.kind} card with ${claimed} claimed`);
   }
 });
 
@@ -271,4 +274,132 @@ test("a claim note says what the country did for its region", () => {
   assert.equal(claimRegionNote({ AU: "p1" }, "NZ", "p1"), "New Zealand: you own all of Australia and New Zealand. +1");
   assert.equal(claimRegionNote({ US: "p2" }, "CA", "p1"), "Canada: North America is split, so no one gets its +2.");
   assert.equal(claimRegionNote({}, "FR", "p1"), "France: not in a bonus region.");
+});
+
+const seededGame = (seed: number) => {
+  const rng = seeded(seed);
+  return { rng, players: ["a", "b", "c"], pickClaim: (fits: string[], unclaimed: string[]) => (fits.length ? fits : unclaimed)[Math.floor(rng() * (fits.length || unclaimed.length))] };
+};
+
+test("simulation: every non-wild card fits the band, kinds are spread, and kinds never repeat in a row", () => {
+  const kinds = new Map<string, number>();
+  const fitCounts: number[] = [];
+  let deals = 0, repeats = 0;
+  for (let game = 0; game < 120; game++) {
+    const { rng, pickClaim } = seededGame(1000 + game);
+    let unclaimed = allCodes();
+    let recent: Card[] = [];
+    // Start with a random share of the board already gone, then play it down the way a game does.
+    unclaimed = unclaimed.filter(() => rng() > (game % 4) * 0.2);
+    while (unclaimed.length) {
+      const card = dealCard(unclaimed, rng, recent);
+      deals++;
+      kinds.set(card.kind, (kinds.get(card.kind) ?? 0) + 1);
+      if (recent[0] && recent[0].kind === card.kind) { repeats++; assert.ok(unclaimed.length < 40, `${card.kind} repeated with ${unclaimed.length} left`); }
+      assert.ok(!recent.slice(0, RECENT_CARDS).some((old) => cardLabel(old) === cardLabel(card)) || card.kind === "wild", `${cardLabel(card)} repeated inside the last ${RECENT_CARDS} deals`);
+      const fits = fittingCodes(card, unclaimed);
+      if (card.kind !== "wild") {
+        const band = fitBand(unclaimed.length);
+        assert.ok(fits.length >= band.min && fits.length <= band.max, `${cardLabel(card)}: ${fits.length} fit, band ${band.min}-${band.max}`);
+        if (unclaimed.length >= 100) assert.ok(fits.length >= MIN_FIT && fits.length <= MAX_FIT);
+        fitCounts.push(fits.length);
+      }
+      recent = [card, ...recent].slice(0, RECENT_CARDS);
+      const take = pickClaim(fits, unclaimed);
+      unclaimed = unclaimed.filter((code) => code !== take);
+    }
+  }
+  for (const [kind, count] of kinds) if (kind !== "wild") assert.ok(count / deals <= 0.25, `${kind} is ${((count / deals) * 100).toFixed(1)}% of deals`);
+  for (const kind of DEALT_KINDS) assert.ok((kinds.get(kind) ?? 0) > 0, `${kind} is dealt`);
+  assert.ok((kinds.get("wild") ?? 0) / deals < 0.08);
+  assert.ok(repeats / deals < 0.02, `${repeats} consecutive repeats in ${deals} deals`);
+});
+
+test("new cards decide fits from the data, and countries without data never fit numeric cards", () => {
+  assert.ok(cardFits({ kind: "borders", countries: ["ES", "DE"] }, "FR") && cardFits({ kind: "borders", countries: ["ES", "DE"] }, "PT"));
+  assert.ok(!cardFits({ kind: "borders", countries: ["ES", "DE"] }, "JP") && !cardFits({ kind: "borders", countries: ["JP"] }, "KR"), "island nations have no land borders");
+  assert.ok(cardFits({ kind: "neighbours", n: 0 }, "JP") && !cardFits({ kind: "neighbours", n: 0 }, "FR"));
+  assert.ok(!cardFits({ kind: "neighbours", n: 10 }, "DE") && cardFits({ kind: "neighbours", n: 10 }, "CN") && cardFits({ kind: "neighbours", n: 2 }, "DE"));
+  assert.ok(cardFits({ kind: "area", dir: "over", n: 1_000_000 }, "BR") && cardFits({ kind: "area", dir: "under", n: 1000 }, "MC"));
+  assert.ok(cardFits({ kind: "population", dir: "over", n: 100_000_000 }, "JP") && !cardFits({ kind: "population", dir: "over", n: 100_000_000 }, "NO"));
+  assert.ok(cardFits({ kind: "gdp", dir: "over", n: 1e12 }, "DE") && cardFits({ kind: "gdp", dir: "under", n: 1e9 }, "TV"));
+  assert.ok(cardFits({ kind: "gdpPerCapita", dir: "over", n: 50_000 }, "CH") && cardFits({ kind: "gdpPerCapita", dir: "under", n: 1_500 }, "SS"));
+  for (const code of ["KP", "TW", "VA"]) {
+    assert.ok(!cardFits({ kind: "gdp", dir: "over", n: 1 }, code) && !cardFits({ kind: "gdp", dir: "under", n: 1e15 }, code), `${code} has no GDP`);
+  }
+  assert.ok(!cardFits({ kind: "population", dir: "under", n: 1e12 }, "TW") && !cardFits({ kind: "population", dir: "under", n: 1e12 }, "VA"));
+  assert.ok(cardFits({ kind: "language", language: "French" }, "FR") && !cardFits({ kind: "language", language: "French" }, "DE"));
+  assert.ok(cardFits({ kind: "timezones", multiple: true }, "US") && cardFits({ kind: "timezones", multiple: false }, "DE") && !cardFits({ kind: "timezones", multiple: true }, "DE"));
+});
+
+test("flag colours are right for well-known flags", () => {
+  const colours = (code: string) => [...countryStat(code)!.flagColours].sort();
+  assert.deepEqual(colours("JP"), ["red", "white"]);
+  assert.deepEqual(colours("DE"), ["black", "red", "yellow"]);
+  assert.deepEqual(colours("BR"), ["blue", "green", "white", "yellow"]);
+  assert.deepEqual(colours("CA"), ["red", "white"]);
+  assert.deepEqual(colours("SE"), ["blue", "yellow"]);
+  assert.deepEqual(colours("IE"), ["green", "orange", "white"]);
+  assert.ok(cardFits({ kind: "flag", colour: "red", has: true }, "JP") && !cardFits({ kind: "flag", colour: "red", has: false }, "JP"));
+  assert.ok(cardFits({ kind: "flag", colour: "blue", has: false }, "JP"));
+  assert.ok(!cardFits({ kind: "flag", colour: "green", has: true }, "ZZ") && !cardFits({ kind: "flag", colour: "green", has: false }, "ZZ"), "unknown codes fit neither side");
+});
+
+test("the stats file covers every game country, with missing values left null", () => {
+  for (const country of allCountryFacts()) {
+    const stat = countryStat(country.code);
+    assert.ok(stat, `${country.code} has stats`);
+    assert.ok(stat!.flagColours.length >= 1);
+  }
+  assert.equal(countryStat("TW")!.gdpUsd, null);
+  assert.ok(countryStat("DE")!.population! > 80_000_000);
+  assert.equal(countryStat("zz"), null);
+});
+
+test("labels are plain and say what they test", () => {
+  assert.equal(cardLabel({ kind: "borders", countries: ["ES", "DE"] }), "Shares a land border with Spain or Germany");
+  assert.equal(cardLabel({ kind: "borders", countries: ["ES", "DE", "PE"] }), "Shares a land border with Spain, Germany or Peru");
+  assert.equal(cardLabel({ kind: "neighbours", n: 0 }), "Has no land neighbours (island or isolated)");
+  assert.equal(cardLabel({ kind: "neighbours", n: 4 }), "Has 4 or more land neighbours");
+  assert.equal(cardLabel({ kind: "area", dir: "over", n: 100_000 }), "Area over 100,000 km²");
+  assert.equal(cardLabel({ kind: "population", dir: "under", n: 25_000_000 }), "Population under 25 million");
+  assert.equal(cardLabel({ kind: "gdp", dir: "over", n: 1e12 }), "GDP over $1 trillion");
+  assert.equal(cardLabel({ kind: "gdp", dir: "under", n: 5e8 }), "GDP under $500 million");
+  assert.equal(cardLabel({ kind: "gdpPerCapita", dir: "over", n: 10_000 }), "GDP per capita over $10,000");
+  assert.equal(cardLabel({ kind: "language", language: "Spanish" }), "Spanish is an official language");
+  assert.equal(cardLabel({ kind: "flag", colour: "red", has: true }), "Flag has red");
+  assert.equal(cardLabel({ kind: "flag", colour: "green", has: false }), "Flag has no green");
+  assert.equal(cardLabel({ kind: "timezones", multiple: true }), "Spans more than one time zone");
+  assert.equal(cardLabel({ kind: "timezones", multiple: false }), "Has a single time zone");
+});
+
+test("the fit band relaxes as the board empties and never drops below 3", () => {
+  assert.deepEqual(fitBand(197), { min: MIN_FIT, max: MAX_FIT });
+  assert.deepEqual(fitBand(100), { min: MIN_FIT, max: MAX_FIT });
+  for (let left = 1; left <= 197; left++) {
+    const band = fitBand(left);
+    assert.ok(band.min >= 3 && band.max >= band.min && band.max <= MAX_FIT && band.min <= MIN_FIT);
+  }
+});
+
+test("starting countries: land-linked, not islands, different subregions, far apart", () => {
+  for (let seed = 1; seed <= 100; seed++) {
+    for (const count of [2, 3]) {
+      const starts = pickStartCountries(count, seeded(seed));
+      assert.equal(new Set(starts).size, count);
+      const facts = starts.map((code) => countryFacts(code)!);
+      for (const country of facts) assert.ok(country.borders.length >= 2, `${country.name} has 2+ land neighbours`);
+      assert.equal(new Set(facts.map((country) => country.subregion)).size, count, "one start per subregion");
+    }
+  }
+  assert.ok(isStartClaim({ round: 0 }) && !isStartClaim({ round: 1 }));
+});
+
+test("starting claims score nothing but count for territory and are skipped by the first-claim award", () => {
+  const start = { ...claim("DE", "p1", 0, 0), turn: -1 };
+  const claims = [start, claim("FR", "p1"), claim("BE", "p1"), { ...claim("JP", "p2", 0, 0), turn: -1 }, claim("ES", "p2")];
+  const scores = computeScores(["p1", "p2"], claims);
+  assert.equal(scores.p1.points, 2, "the start is worth 0");
+  assert.equal(scores.p1.territory, 3, "but it links DE, FR and BE");
+  assert.equal(computeAwards(["p1", "p2"], claims, 20).find((award) => award.id === "first")!.detail, "Opened the board with France");
 });

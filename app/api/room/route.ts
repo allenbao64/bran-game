@@ -2,10 +2,10 @@ import { randomInt, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
 import { gameConfig, isGameId, type GameId } from "@/lib/games";
-import { DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, isTurnRounds, isTurnSeconds, LEGACY_TURN_ROUNDS } from "@/lib/turn-rules";
+import { DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, isStartClaim, isTurnRounds, isTurnSeconds, LEGACY_TURN_ROUNDS } from "@/lib/turn-rules";
 import { DEFAULT_EMPIRE_TURN_SECONDS, isEmpireTurnSeconds } from "@/lib/empire/types";
 import {
-  applyPass, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, runTurnAction, turnSnapshot, type TurnRoom
+  applyPass, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, pickTurnStarts, runTurnAction, turnSnapshot, type TurnRoom
 } from "@/lib/turn-room";
 import { empireSnapshot, isEmpireRoom, loadSyncedEmpireRoom } from "@/lib/empire-room";
 
@@ -92,6 +92,16 @@ export async function POST(request: NextRequest) {
           turn.order = order
           room.turn = turn
           room.claims = {}
+          room.startCountries = {}
+          local starts = cjson.decode(ARGV[5])
+          for index, id in ipairs(order) do
+            if starts[index] then
+              table.insert(room.claims, {code=starts[index], playerId=id, points=0, round=0, turn=-1, at=tonumber(ARGV[2])})
+              room.startCountries[id] = starts[index]
+            end
+          end
+          room.recentCards = {turn.card}
+          room.recentGuesses = {}
         end
         redis.call('SET', KEYS[1], cjson.encode(room), 'EX', tonumber(ARGV[3]))
         local players = {}
@@ -102,8 +112,10 @@ export async function POST(request: NextRequest) {
       `;
       const startedAt = Date.now();
       const existing = await redis.get<Room>(key);
-      const turnJson = existing && isTurnsRoom(existing) ? JSON.stringify(initialTurnState(["pending"], startedAt, existing.turnSeconds, existing.rounds ?? LEGACY_TURN_ROUNDS)) : "";
-      const result = await redis.eval(script, [key], [body.token, String(startedAt), String(ROOM_TTL_SECONDS), turnJson]);
+      const turnsRoom = existing && isTurnsRoom(existing) ? existing : null;
+      const starts = turnsRoom ? pickTurnStarts(turnsRoom.players.length) : [];
+      const turnJson = turnsRoom ? JSON.stringify(initialTurnState(["pending"], startedAt, turnsRoom.turnSeconds, turnsRoom.rounds ?? LEGACY_TURN_ROUNDS, starts)) : "";
+      const result = await redis.eval(script, [key], [body.token, String(startedAt), String(ROOM_TTL_SECONDS), turnJson, JSON.stringify(starts)]);
       const started = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> }>(result);
       if (started.error) return error(started.error);
       if (!started.ok) return error("Could not start this round. Please try again.");
@@ -207,7 +219,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         code: turnRoom.code, gameId: "countries", mode: "turns", status: turnRoom.status, startedAt: turnRoom.startedAt,
         players: publicPlayers(turnRoom.players as Player[]), playerId: mine.id,
-        myGuesses: (turnRoom.claims ?? []).filter((claim) => claim.playerId === mine.id).reverse()
+        myGuesses: (turnRoom.claims ?? []).filter((claim) => claim.playerId === mine.id && !isStartClaim(claim)).reverse()
           .map((claim) => ({ code: claim.code, name: (view.claimLog as { code: string; name: string }[]).find((entry) => entry.code === claim.code)?.name ?? claim.code })),
         lockedCountryCodes: Object.keys(claimed), ...view
       });

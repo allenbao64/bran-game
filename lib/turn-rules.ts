@@ -1,5 +1,6 @@
 /** Version 2 (simple turns) rules for Country Sprint: criteria cards, points, bonuses and awards. */
 import { allCountryFacts, countryFacts } from "@/lib/countries";
+import { countryStat, FLAG_COLOURS, type FlagColour } from "@/lib/country-stats";
 
 /** Host-selectable round counts. Rooms saved before the choice existed ran 12 rounds, so they keep that. */
 export const TURN_ROUND_OPTIONS = [15, 20, 30] as const;
@@ -23,20 +24,37 @@ export const TURN_SPEEDS = [
 export const DEFAULT_TURN_SECONDS = 15;
 export const isTurnSeconds = (value: unknown): value is number => TURN_SPEEDS.some((speed) => speed.seconds === value);
 
+type Direction = "over" | "under";
+export type NumericKind = "area" | "population" | "gdp" | "gdpPerCapita";
 export type Card =
   | { kind: "letter"; letter: string }
   | { kind: "max"; n: number }
   | { kind: "min"; n: number }
   | { kind: "continent"; region: string }
   | { kind: "landlocked" }
+  /** Legacy single-country border card: still readable in saved rooms, no longer dealt. */
   | { kind: "border"; country: string }
-  | { kind: "wild" };
+  | { kind: "wild" }
+  | { kind: "borders"; countries: string[] }
+  /** n land neighbours or more; n = 0 means none at all. */
+  | { kind: "neighbours"; n: number }
+  | { kind: NumericKind; dir: Direction; n: number }
+  | { kind: "language"; language: string }
+  | { kind: "flag"; colour: FlagColour; has: boolean }
+  | { kind: "timezones"; multiple: boolean };
 
 export type Claim = { code: string; playerId: string; points: number; round: number; turn: number; at: number };
 export type Bonus = { kind: "region" | "territory"; label: string; points: number };
 export type Score = { points: number; bonuses: Bonus[]; bonusTotal: number; total: number; territory: number };
 
 export const CONTINENTS = ["Africa", "Americas", "Asia", "Europe", "Oceania"];
+
+const NUMERIC: Record<NumericKind, (code: string) => number | null> = {
+  area: (code) => countryFacts(code)?.area ?? null,
+  population: (code) => countryStat(code)?.population ?? null,
+  gdp: (code) => countryStat(code)?.gdpUsd ?? null,
+  gdpPerCapita: (code) => countryStat(code)?.gdpPerCapitaUsd ?? null
+};
 
 export function cardFits(card: Card, code: string): boolean {
   const country = countryFacts(code);
@@ -48,9 +66,27 @@ export function cardFits(card: Card, code: string): boolean {
     case "continent": return country.region === card.region;
     case "landlocked": return country.landlocked;
     case "border": return country.borders.includes(card.country);
+    case "borders": return country.borders.some((neighbour) => card.countries.includes(neighbour));
+    case "neighbours": return card.n === 0 ? country.borders.length === 0 : country.borders.length >= card.n;
+    case "area": case "population": case "gdp": case "gdpPerCapita": {
+      const value = NUMERIC[card.kind](code);
+      return value !== null && (card.dir === "over" ? value > card.n : value < card.n);
+    }
+    case "language": return country.languages.includes(card.language);
+    case "flag": return countryStat(code)?.flagColours.includes(card.colour) === card.has;
+    case "timezones": {
+      const zones = countryStat(code)?.timezoneCount;
+      return zones != null && (card.multiple ? zones > 1 : zones === 1);
+    }
     case "wild": return true;
   }
 }
+
+const compact = (n: number) => n >= 1e12 ? `${n / 1e12} trillion` : n >= 1e9 ? `${n / 1e9} billion` : n >= 1e6 ? `${n / 1e6} million` : n.toLocaleString("en-US");
+const listNames = (codes: string[]) => {
+  const names = codes.map((code) => countryFacts(code)?.name ?? code);
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+};
 
 export function cardLabel(card: Card): string {
   switch (card.kind) {
@@ -60,6 +96,15 @@ export function cardLabel(card: Card): string {
     case "continent": return `In ${card.region === "Americas" ? "the Americas" : card.region}`;
     case "landlocked": return "Landlocked country";
     case "border": return `Borders ${countryFacts(card.country)?.name ?? card.country}`;
+    case "borders": return `Shares a land border with ${listNames(card.countries)}`;
+    case "neighbours": return card.n === 0 ? "Has no land neighbours (island or isolated)" : `Has ${card.n} or more land neighbours`;
+    case "area": return `Area ${card.dir} ${card.n.toLocaleString("en-US")} km²`;
+    case "population": return `Population ${card.dir} ${compact(card.n)}`;
+    case "gdp": return `GDP ${card.dir} $${compact(card.n)}`;
+    case "gdpPerCapita": return `GDP per capita ${card.dir} $${card.n.toLocaleString("en-US")}`;
+    case "language": return `${card.language} is an official language`;
+    case "flag": return card.has ? `Flag has ${card.colour}` : `Flag has no ${card.colour}`;
+    case "timezones": return card.multiple ? "Spans more than one time zone" : "Has a single time zone";
     case "wild": return "Wild card: any country";
   }
 }
@@ -72,39 +117,120 @@ export function fittingCodes(card: Card, unclaimed: string[]) {
 function pick<T>(items: T[], rng: () => number): T {
   return items[Math.min(items.length - 1, Math.floor(rng() * items.length))];
 }
+function shuffled<T>(items: T[], rng: () => number): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [result[i], result[j]] = [result[j], result[i]]; }
+  return result;
+}
 
-const CARD_KINDS = ["letter", "max", "min", "continent", "landlocked", "border"] as const;
+/** Every non-wild card must fit between MIN_FIT and MAX_FIT unclaimed countries. */
+export const MIN_FIT = 12;
+export const MAX_FIT = 60;
+/** Wild cards are a rare draw. */
+export const WILD_RATE = 0.03;
+/** An identical card is not dealt again within this many deals. */
+export const RECENT_CARDS = 6;
 
-export const WILD_RATE = 0.1;
+/** The fit band for a board with `unclaimed` countries left: relaxes as the board empties (never below MIN_FITTING_COUNTRIES). */
+export function fitBand(unclaimed: number) {
+  const min = Math.max(MIN_FITTING_COUNTRIES, Math.min(MIN_FIT, Math.ceil(unclaimed / 4)));
+  return { min, max: Math.min(MAX_FIT, Math.max(min, Math.ceil(unclaimed * 0.6))) };
+}
 
-/** A random non-wild card, or null if the kind drawn cannot be built (e.g. no neighbours left). */
-function candidateCard(unclaimed: string[], rng: () => number): Card | null {
-  const kind = pick([...CARD_KINDS], rng);
-  switch (kind) {
-    case "letter": return { kind, letter: pick(unclaimed.map((code) => countryFacts(code)!.initial), rng) };
-    case "max": return { kind, n: 5 + Math.floor(rng() * 3) };
-    case "min": return { kind, n: 9 + Math.floor(rng() * 3) };
-    case "continent": return { kind, region: pick(CONTINENTS, rng) };
-    case "landlocked": return { kind };
-    case "border": {
-      const neighbours = [...new Set(unclaimed.flatMap((code) => countryFacts(code)!.borders))];
-      return neighbours.length ? { kind, country: pick(neighbours, rng) } : null;
-    }
+/** Rounds to 1, 2, 2.5 or 5 times a power of ten, e.g. 10M, 25M, 50M. */
+function niceNumber(value: number) {
+  const exponent = Math.floor(Math.log10(value));
+  const mantissa = value / 10 ** exponent;
+  const best = [1, 2, 2.5, 5, 10].reduce((a, b) => (Math.abs(Math.log(b / mantissa)) < Math.abs(Math.log(a / mantissa)) ? b : a));
+  return best * 10 ** exponent;
+}
+
+/** Thresholds that put roughly 15-45% of the unclaimed countries on the "over" or "under" side. */
+function numericCandidates(kind: NumericKind, unclaimed: string[], rng: () => number): Card[] {
+  const values = unclaimed.map(NUMERIC[kind]).filter((value): value is number => value !== null).sort((a, b) => a - b);
+  if (values.length < 8) return [];
+  const cards: Card[] = [];
+  for (let i = 0; i < 12; i++) {
+    const share = 0.15 + rng() * 0.3;
+    const dir: Direction = rng() < 0.5 ? "over" : "under";
+    const raw = values[Math.min(values.length - 1, Math.floor((dir === "over" ? 1 - share : share) * values.length))];
+    if (raw > 0) cards.push({ kind, dir, n: niceNumber(raw) });
   }
+  return cards;
+}
+
+const distinct = <T,>(items: T[]) => [...new Set(items)];
+const CANDIDATES = {
+  letter: (unclaimed) => distinct(unclaimed.map((code) => countryFacts(code)!.initial)).map((letter): Card => ({ kind: "letter", letter })),
+  max: () => [4, 5, 6, 7, 8, 9].map((n): Card => ({ kind: "max", n })),
+  min: () => [8, 9, 10, 11, 12, 13].map((n): Card => ({ kind: "min", n })),
+  continent: () => CONTINENTS.map((region): Card => ({ kind: "continent", region })),
+  landlocked: () => [{ kind: "landlocked" }],
+  borders: (_, rng) => {
+    const anchors = allCountryFacts().filter((country) => country.borders.length > 0).map((country) => country.code);
+    return Array.from({ length: 40 }, (): Card => ({ kind: "borders", countries: shuffled(anchors, rng).slice(0, rng() < 0.6 ? 2 : 3) }));
+  },
+  neighbours: () => [0, 2, 3, 4, 5, 6, 7, 8].map((n): Card => ({ kind: "neighbours", n })),
+  area: (unclaimed, rng) => numericCandidates("area", unclaimed, rng),
+  population: (unclaimed, rng) => numericCandidates("population", unclaimed, rng),
+  gdp: (unclaimed, rng) => numericCandidates("gdp", unclaimed, rng),
+  gdpPerCapita: (unclaimed, rng) => numericCandidates("gdpPerCapita", unclaimed, rng),
+  language: (unclaimed) => distinct(unclaimed.flatMap((code) => countryFacts(code)!.languages)).map((language): Card => ({ kind: "language", language })),
+  flag: () => FLAG_COLOURS.flatMap((colour): Card[] => [{ kind: "flag", colour, has: true }, { kind: "flag", colour, has: false }]),
+  timezones: () => [{ kind: "timezones", multiple: true }, { kind: "timezones", multiple: false }]
+} satisfies Record<string, (unclaimed: string[], rng: () => number) => Card[]>;
+export const DEALT_KINDS = Object.keys(CANDIDATES) as (keyof typeof CANDIDATES)[];
+
+/**
+ * Deals one card. Wild is a rare draw, rolled once and never twice in a row. Otherwise kinds are tried in random
+ * order (skipping the previous card's kind and any card in `recent`, newest first) until one has a card that fits
+ * between the band's bounds; a repeated kind is the fallback, wild the last resort.
+ */
+export function dealCard(unclaimed: string[], rng: () => number = Math.random, recent: Card[] = []): Card {
+  if (unclaimed.length === 0 || (rng() < WILD_RATE && recent[0]?.kind !== "wild")) return { kind: "wild" };
+  const { min, max } = fitBand(unclaimed.length);
+  const seen = new Set(recent.slice(0, RECENT_CARDS).map(cardLabel));
+  const kinds = shuffled(DEALT_KINDS, rng);
+  const last = recent[0]?.kind;
+  for (const kind of [...kinds.filter((k) => k !== last), ...kinds.filter((k) => k === last)]) {
+    const options = CANDIDATES[kind](unclaimed, rng).filter((card) => {
+      if (seen.has(cardLabel(card))) return false;
+      const fits = fittingCodes(card, unclaimed).length;
+      return fits >= min && fits <= max;
+    });
+    if (options.length) return pick(options, rng);
+  }
+  return { kind: "wild" };
+}
+
+/** Starting countries are claims in round 0 worth 0 points; they still count for territory and region bonuses. */
+export const START_ROUND = 0;
+export const isStartClaim = (claim: Pick<Claim, "round">) => claim.round === START_ROUND;
+/** Starts must be at least this far apart (km, centre to centre) when the board allows it. */
+export const MIN_START_DISTANCE_KM = 3000;
+
+function distanceKm(a: [number, number], b: [number, number]) {
+  const rad = Math.PI / 180;
+  const h = Math.sin(((b[0] - a[0]) * rad) / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(((b[1] - a[1]) * rad) / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
 }
 
 /**
- * Deals one card. Wild is an intentional 10% draw, rolled once. Otherwise a card
- * is only dealt if at least 3 unclaimed countries fit it; we redraw up to 40 times
- * and fall back to wild only when no other card could be dealt.
+ * One starting country per player: not an island, at least 2 land neighbours, every start in a different subregion,
+ * and as far apart as a few hundred random tries find (stopping early once all pairs are MIN_START_DISTANCE_KM apart).
  */
-export function dealCard(unclaimed: string[], rng: () => number = Math.random): Card {
-  if (unclaimed.length === 0 || rng() < WILD_RATE) return { kind: "wild" };
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const card = candidateCard(unclaimed, rng);
-    if (card && fittingCodes(card, unclaimed).length >= MIN_FITTING_COUNTRIES) return card;
+export function pickStartCountries(count: number, rng: () => number = Math.random): string[] {
+  const eligible = allCountryFacts().filter((country) => country.borders.length >= 2);
+  let best: string[] = [];
+  let bestGap = -1;
+  for (let attempt = 0; attempt < 300 && bestGap < MIN_START_DISTANCE_KM; attempt++) {
+    const picks = shuffled(eligible, rng).slice(0, count);
+    if (new Set(picks.map((country) => country.subregion)).size < picks.length) continue;
+    let gap = Infinity;
+    picks.forEach((a, i) => picks.slice(i + 1).forEach((b) => { gap = Math.min(gap, distanceKm(a.latlng, b.latlng)); }));
+    if (gap > bestGap) { best = picks.map((country) => country.code); bestGap = gap; }
   }
-  return { kind: "wild" };
+  return best;
 }
 
 export function allCodes() {
@@ -220,8 +346,9 @@ export type Award = { id: "first" | "territory" | "comeback"; title: string; pla
 
 export function computeAwards(playerIds: string[], claims: Claim[], totalRounds: number): Award[] {
   const awards: Award[] = [];
-  if (claims.length) {
-    const first = claims[0];
+  const played = claims.filter((claim) => !isStartClaim(claim));
+  if (played.length) {
+    const first = played[0];
     awards.push({ id: "first", title: "First claim", playerId: first.playerId, detail: `Opened the board with ${countryFacts(first.code)?.name ?? first.code}` });
   }
   const territory = territoryLeader(playerIds, claims);

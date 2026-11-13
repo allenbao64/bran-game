@@ -8,7 +8,10 @@ type StoredRoom = {
   turnSeconds?: number;
   rounds?: number;
   turn?: { number: number; order: string[] };
-  claims?: unknown[];
+  claims?: { code: string; playerId: string; points: number; round: number; turn: number; at: number }[];
+  startCountries?: Record<string, string>;
+  recentCards?: unknown[];
+  recentGuesses?: unknown[];
   players: { id: string; token: string; name: string; host: boolean }[];
 };
 
@@ -93,8 +96,18 @@ export class MemoryRedis {
       room.status = "playing";
       room.startedAt = Number(args[1]);
       if (room.mode === "turns" && args[3]) {
+        // Mirrors the start script: one 0-point round-0 claim per player from the starts list, and the first card seeds the card history.
         room.turn = { ...JSON.parse(args[3]), order: room.players.map((player) => player.id) };
+        const starts = JSON.parse(args[4] || "[]") as string[];
         room.claims = [];
+        room.startCountries = {};
+        room.players.forEach(({ id }, index) => {
+          if (!starts[index]) return;
+          room.claims!.push({ code: starts[index], playerId: id, points: 0, round: 0, turn: -1, at: Number(args[1]) });
+          room.startCountries![id] = starts[index];
+        });
+        room.recentCards = [(room.turn as { card?: unknown }).card];
+        room.recentGuesses = [];
       }
       await this.set(key, room);
       return {

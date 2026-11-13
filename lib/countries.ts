@@ -92,6 +92,12 @@ export type CountryFacts = {
   code: string; name: string; region: string; subregion: string; landlocked: boolean;
   /** Land neighbours as alpha-2 codes, restricted to countries in the game list. */
   borders: string[]; initial: string; letters: number;
+  /** Land area in km². */
+  area: number;
+  /** Official language names in English. */
+  languages: string[];
+  /** Latitude and longitude of the country centre. */
+  latlng: [number, number];
 };
 const factsByCode = new Map<string, CountryFacts>();
 {
@@ -102,7 +108,8 @@ const factsByCode = new Map<string, CountryFacts>();
     factsByCode.set(c.cca2, {
       code: c.cca2, name: c.name.common, region: c.region, subregion: c.subregion, landlocked: Boolean(c.landlocked),
       borders: c.borders.map((b) => alpha2By3.get(b)).filter((b): b is string => Boolean(b)),
-      initial: letters.slice(0, 1).toUpperCase(), letters: letters.length
+      initial: letters.slice(0, 1).toUpperCase(), letters: letters.length,
+      area: c.area, languages: Object.values(c.languages ?? {}), latlng: [c.latlng[0], c.latlng[1]]
     });
   }
 }

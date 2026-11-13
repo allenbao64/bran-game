@@ -7,7 +7,13 @@ import type { Redis } from "@upstash/redis";
 import { ROOM_TTL_SECONDS } from "@/lib/redis";
 import { countryByCode } from "@/lib/countries";
 import { advanceByTimeouts, createTurnState, currentPlayerId, currentRound, isPlayersTurn, nextTurn, type TurnState } from "@/lib/turns";
-import { cardFits, cardLabel, computeAwards, computeScores, dealCard, DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, isDoubleRound, largestGroupsByPlayer, pointsForRound, unclaimedCodes, allCodes, type Card, type Claim } from "@/lib/turn-rules";
+import {
+  cardFits, cardLabel, computeAwards, computeScores, dealCard, DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, isDoubleRound, isStartClaim, largestGroupsByPlayer,
+  pickStartCountries, pointsForRound, RECENT_CARDS, unclaimedCodes, allCodes, type Card, type Claim
+} from "@/lib/turn-rules";
+
+export const MAX_RECENT_GUESSES = 12;
+export type GuessEvent = { playerId: string; kind: "claimed" | "wrong" | "passed" | "timeout"; code: string | null; text: string; points: number; at: number };
 
 export type TurnRoom = {
   code: string;
@@ -22,8 +28,15 @@ export type TurnRoom = {
   rounds?: number;
   turn?: TurnState<Card>;
   claims?: Claim[];
+  /** Each player's free starting country (also a 0-point claim in round 0). Missing on older rooms. */
+  startCountries?: Record<string, string>;
+  /** Newest first, at most MAX_RECENT_GUESSES. Missing on older rooms. */
+  recentGuesses?: GuessEvent[];
+  /** Cards dealt lately, newest first (at most RECENT_CARDS), so dealing can vary kinds. */
+  recentCards?: Card[];
 };
-export type TurnFailure = { error: string; status: number };
+/** `persist` saves the room even though the action failed (a logged wrong guess). */
+export type TurnFailure = { error: string; status: number; persist?: boolean };
 
 /** Compare-and-set on the turn number: writes the new room JSON only if nobody advanced the turn meanwhile. */
 export const TURN_CAS_SCRIPT = `
@@ -47,21 +60,40 @@ export const isTurnsRoom = (room: Pick<TurnRoom, "gameId" | "mode">) => (room.ga
 export function normalizeTurnRoom<T extends TurnRoom>(room: T): T {
   const asArray = <V,>(value: unknown): V[] => (Array.isArray(value) ? value as V[] : []);
   room.claims = asArray<Claim>(room.claims);
+  room.recentGuesses = asArray<GuessEvent>(room.recentGuesses);
+  room.recentCards = asArray<Card>(room.recentCards);
+  if (Array.isArray(room.startCountries)) room.startCountries = {};
   if (room.turn) room.turn.order = asArray<string>(room.turn.order);
   return room;
 }
 
-export function initialTurnState(playerIds: string[], now: number, turnSeconds = DEFAULT_TURN_SECONDS, rounds = DEFAULT_TURN_ROUNDS): TurnState<Card> {
-  return createTurnState(playerIds, now, rounds, dealCard(allCodes(), rng), turnSeconds * 1000);
+/** `taken` are the starting countries, which are not up for grabs on the first card. */
+export function initialTurnState(playerIds: string[], now: number, turnSeconds = DEFAULT_TURN_SECONDS, rounds = DEFAULT_TURN_ROUNDS, taken: string[] = []): TurnState<Card> {
+  return createTurnState(playerIds, now, rounds, dealCard(allCodes().filter((code) => !taken.includes(code)), rng), turnSeconds * 1000);
 }
+/** Starting countries for a new turns room: far apart, in different subregions, none an island. */
+export const pickTurnStarts = (count: number) => pickStartCountries(count, rng);
 
-const dealFor = (room: TurnRoom) => () => dealCard(unclaimedCodes(room.claims ?? []), rng);
+/** Deals the next card and remembers it. Rooms from before the history existed seed it with the current card. */
+function dealNext(room: TurnRoom): Card {
+  const recent = room.recentCards?.length ? room.recentCards : room.turn?.card ? [room.turn.card] : [];
+  const card = dealCard(unclaimedCodes(room.claims ?? []), rng, recent);
+  room.recentCards = [card, ...recent].slice(0, RECENT_CARDS);
+  return card;
+}
+function logGuess(room: TurnRoom, event: GuessEvent) {
+  room.recentGuesses = [event, ...(room.recentGuesses ?? [])].slice(0, MAX_RECENT_GUESSES);
+}
 
 /** Applies every fully expired turn as a pass. Returns the same room object, mutated. */
 export function syncTurnTime(room: TurnRoom, now: number): { room: TurnRoom; changed: boolean } {
   if (room.status !== "playing" || !room.turn || room.turn.finished) return { room, changed: false };
-  const { state, advanced } = advanceByTimeouts(room.turn, now, dealFor(room));
+  const before = room.turn;
+  const { state, advanced } = advanceByTimeouts(before, now, () => dealNext(room));
   if (!advanced) return { room, changed: false };
+  for (let i = 0; i < advanced; i++) {
+    logGuess(room, { playerId: before.order[(before.number + i) % before.order.length], kind: "timeout", code: null, text: "ran out of time", points: 0, at: before.startedAt + (i + 1) * before.turnMs });
+  }
   room.turn = state;
   if (state.finished) room.status = "ended";
   return { room, changed: true };
@@ -77,7 +109,7 @@ function checkTurn(room: TurnRoom, playerId: string): TurnFailure | null {
 }
 
 function finishTurn(room: TurnRoom, now: number, exhausted: boolean) {
-  room.turn = nextTurn(room.turn!, now, exhausted ? null : dealCard(unclaimedCodes(room.claims ?? []), rng), exhausted);
+  room.turn = nextTurn(room.turn!, now, exhausted ? null : dealNext(room), exhausted);
   if (room.turn.finished) room.status = "ended";
 }
 
@@ -88,13 +120,23 @@ export function applyClaim(room: TurnRoom, playerId: string, code: string, now: 
   const country = countryByCode(code);
   if (!country) return { error: "That answer is not on the country list.", status: 400 };
   const claims = room.claims ?? [];
+  const wrong = (text: string, error: string, status: number): TurnFailure => {
+    logGuess(room, { playerId, kind: "wrong", code: country.code, text, points: 0, at: now });
+    return { error, status, persist: true };
+  };
   const owner = claims.find((claim) => claim.code === country.code);
-  if (owner) return { error: owner.playerId === playerId ? "You already claimed that country." : `${country.name} is already claimed.`, status: 409 };
+  if (owner) {
+    const ownerName = room.players.find((player) => player.id === owner.playerId)?.name ?? "someone";
+    return owner.playerId === playerId ? wrong("already yours", "You already claimed that country.", 409)
+      : wrong(`already ${ownerName}'s`, `${country.name} is already claimed.`, 409);
+  }
   const card = room.turn!.card;
-  if (card && !cardFits(card, country.code)) return { error: `${country.name} doesn't fit this card: ${cardLabel(card)}.`, status: 400 };
+  if (card && !cardFits(card, country.code)) return wrong("doesn't fit", `${country.name} doesn't fit this card: ${cardLabel(card)}.`, 400);
   const round = currentRound(room.turn!);
-  claims.push({ code: country.code, playerId, points: pointsForRound(round, room.turn!.totalRounds), round, turn: room.turn!.number, at: now });
+  const points = pointsForRound(round, room.turn!.totalRounds);
+  claims.push({ code: country.code, playerId, points, round, turn: room.turn!.number, at: now });
   room.claims = claims;
+  logGuess(room, { playerId, kind: "claimed", code: country.code, text: country.name, points, at: now });
   finishTurn(room, now, unclaimedCodes(claims).length === 0);
   return null;
 }
@@ -102,6 +144,7 @@ export function applyClaim(room: TurnRoom, playerId: string, code: string, now: 
 export function applyPass(room: TurnRoom, playerId: string, now: number): TurnFailure | null {
   const failure = checkTurn(room, playerId);
   if (failure) return failure;
+  logGuess(room, { playerId, kind: "passed", code: null, text: "passed", points: 0, at: now });
   finishTurn(room, now, unclaimedCodes(room.claims ?? []).length === 0);
   return null;
 }
@@ -144,7 +187,7 @@ export async function runTurnAction(
     const failure = action(room);
     if (failure) {
       // Persist any timeouts we noticed so other readers see the same turn.
-      if (room.turn.number !== before) await commitTurnRoom(redis, key, before, room);
+      if (failure.persist || room.turn.number !== before) await commitTurnRoom(redis, key, before, room);
       return failure;
     }
     if (await commitTurnRoom(redis, key, before, room)) return { room };
@@ -156,6 +199,7 @@ export async function runTurnAction(
 export function turnSnapshot(room: TurnRoom, now: number) {
   const turn = room.turn!;
   const claims = room.claims ?? [];
+  const played = claims.filter((claim) => !isStartClaim(claim));
   const playerIds = room.players.map((player) => player.id);
   const scores = computeScores(playerIds, claims);
   const round = currentRound(turn);
@@ -169,14 +213,16 @@ export function turnSnapshot(room: TurnRoom, now: number) {
     scores,
     turnSeconds: Math.round(turn.turnMs / 1000),
     largestGroups: largestGroupsByPlayer(playerIds, claims),
-    claimLog: claims.map((claim, order) => ({ ...claim, order, name: countryByCode(claim.code)?.name ?? claim.code })),
+    startCountries: room.startCountries ?? {},
+    recentGuesses: room.recentGuesses ?? [],
+    claimLog: played.map((claim, order) => ({ ...claim, order, name: countryByCode(claim.code)?.name ?? claim.code })),
     countryClaims: Object.fromEntries(claims.map((claim) => [claim.code, claim.playerId])),
   };
   if (room.status === "ended") {
     snapshot.awards = computeAwards(playerIds, claims, turn.totalRounds);
     snapshot.results = room.players.map((player) => ({
       playerId: player.id, name: player.name, ...scores[player.id],
-      guesses: claims.filter((claim) => claim.playerId === player.id)
+      guesses: played.filter((claim) => claim.playerId === player.id)
         .map((claim) => ({ code: claim.code, name: countryByCode(claim.code)?.name ?? claim.code, points: claim.points }))
     })).sort((a, b) => b.total - a.total || b.points - a.points);
   }

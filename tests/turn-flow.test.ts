@@ -104,7 +104,7 @@ test("turn order is enforced and a wrong-turn request is rejected with 409", asy
   assert.equal(view.turn.currentPlayerId, guest.playerId);
   assert.equal(view.turn.number, 1);
   assert.equal((await claim(host, pickFitting(view))).status, 409, "the host cannot go twice in a row");
-  assert.equal(Object.keys(view.countryClaims).length, 1);
+  assert.equal(view.claimLog.length, 1, "starting countries are not in the claim log");
 });
 
 test("the dealt card is enforced, and a wrong answer lets the player retry", async () => {
@@ -183,7 +183,7 @@ test("a claim after the clock ran out is rejected for the player whose turn expi
 test("two simultaneous claims for one turn cannot both succeed", async () => {
   const [host, guest] = await turnsGame();
   const view = await getRoom(host);
-  const fits = fittingCodes(view.turn.card as Card, allCodes());
+  const fits = fittingCodes(view.turn.card as Card, allCodes().filter((code) => !(code in view.countryClaims)));
   const [a, b] = await Promise.all([claim(host, fits[0]), claim(host, fits[1])]);
   assert.deepEqual([a.status, b.status].sort(), [200, 409]);
   const after = await getRoom(guest);
@@ -385,4 +385,108 @@ test("rooms saved without a round count still start with 12 rounds", async () =>
   assert.equal((await getRoom(host)).rounds, 12, "waiting snapshot defaults to 12");
   await postRoom({ action: "start", code: host.code, token: host.token, name: "Host" });
   assert.equal((await getRoom(host)).turn.totalRounds, 12);
+});
+
+test("each player starts with their own country, which scores nothing and cannot be claimed", async () => {
+  const [host, guest, third] = await turnsGame(3);
+  const view = await getRoom(host);
+  const starts = view.startCountries as Record<string, string>;
+  assert.deepEqual(Object.keys(starts).sort(), [host.playerId, guest.playerId, third.playerId].sort());
+  assert.equal(new Set(Object.values(starts)).size, 3);
+  for (const [playerId, code] of Object.entries(starts)) assert.equal(view.countryClaims[code], playerId, "the start is on the map in its owner's name");
+  assert.equal(view.claimLog.length, 0, "starts are not in the claim log");
+  assert.deepEqual(view.myGuesses, []);
+  for (const id of [host.playerId, guest.playerId, third.playerId]) assert.equal(view.scores[id].points, 0);
+  assert.ok(!cardFits({ kind: "wild" }, "ZZ"));
+  const card = view.turn.card as Card;
+  const taken = Object.values(starts)[1];
+  const stolen = await claim(host, taken);
+  assert.equal(stolen.status, card.kind === "wild" || cardFits(card, taken) ? 409 : 400);
+  if (card.kind === "wild" || cardFits(card, taken)) assert.match((await json(stolen)).error, /already claimed/);
+});
+
+test("legacy turns rooms have no starts and no guess log", async () => {
+  const [host] = await legacyGame();
+  const key = `bran:room:${host.code}`;
+  const saved = (await store.get<Record<string, any>>(key))!;
+  delete saved.startCountries; delete saved.recentGuesses; delete saved.recentCards;
+  saved.claims = [];
+  await store.set(key, saved);
+  let view = await getRoom(host);
+  assert.deepEqual(view.startCountries, {});
+  assert.deepEqual(view.recentGuesses, []);
+  assert.equal((await pass(host)).status, 200, "dealing still works without a card history");
+  view = await getRoom(host);
+  assert.equal(view.recentGuesses.length, 1);
+  assert.deepEqual(view.recentGuesses[0], { playerId: host.playerId, kind: "passed", code: null, text: "passed", points: 0, at: clock });
+});
+
+test("the guess log records claims, wrong guesses, passes and timeouts, newest first, up to 12", async () => {
+  const [host, guest] = await turnsGame();
+  let view = await getRoom(host);
+  assert.deepEqual(view.recentGuesses, []);
+  for (let i = 0; i < 10 && view.turn.card.kind === "wild"; i++) { await pass(whoseTurn(view, [host, guest])); view = await getRoom(host); }
+  const log = () => getRoom(host).then((room) => room.recentGuesses as Record<string, any>[]);
+  const before = (await log()).length;
+  const player = whoseTurn(view, [host, guest]);
+  const card = view.turn.card as Card;
+  const misfit = allCodes().find((code) => !cardFits(card, code) && !(code in view.countryClaims))!;
+  assert.equal((await claim(player, misfit)).status, 400);
+  assert.equal((await claim(player, "ZZ")).status, 400, "not a country: not logged");
+  let entries = await log();
+  assert.equal(entries.length, before + 1, "a wrong guess is logged even though it is rejected");
+  assert.deepEqual(entries[0], { playerId: player.playerId, kind: "wrong", code: misfit, text: "doesn't fit", points: 0, at: clock });
+  assert.equal((await getRoom(host)).turn.number, view.turn.number, "the turn did not advance");
+
+  const good = pickFitting(view);
+  clock += 1000;
+  assert.equal((await claim(player, good)).status, 200);
+  entries = await log();
+  assert.equal(entries[0].kind, "claimed");
+  assert.equal(entries[0].code, good);
+  assert.equal(entries[0].points, 1);
+  assert.match(entries[0].text, /\w/);
+  assert.equal(entries[1].kind, "wrong");
+
+  // Naming a country another player owns says whose it is.
+  view = await getRoom(host);
+  const other = whoseTurn(view, [host, guest]);
+  const ownerName = player.playerId === host.playerId ? "Host" : "Brian";
+  if (view.turn.card.kind === "wild" || cardFits(view.turn.card, good)) {
+    assert.equal((await claim(other, good)).status, 409);
+    assert.equal((await log())[0].text, `already ${ownerName}'s`);
+  }
+
+  clock += 1000;
+  assert.equal((await pass(other)).status, 200);
+  assert.deepEqual((await log())[0], { playerId: other.playerId, kind: "passed", code: null, text: "passed", points: 0, at: clock });
+
+  // Three expired turns are logged against the players whose turns they were, oldest first in time.
+  view = await getRoom(host);
+  const first = view.turn.currentPlayerId;
+  const start = view.turn.startedAt;
+  clock = start + 15_000 * 3 + 100;
+  entries = await log();
+  assert.deepEqual(entries.slice(0, 3).map((entry) => [entry.kind, entry.text, entry.code, entry.points]), Array(3).fill(["timeout", "ran out of time", null, 0]));
+  assert.equal(entries[2].playerId, first);
+  assert.equal(entries[2].at, start + 15_000);
+  assert.equal(entries[0].at, start + 15_000 * 3);
+
+  // The log keeps only the newest 12.
+  for (let i = 0; i < 10; i++) { view = await getRoom(host); await pass(whoseTurn(view, [host, guest])); }
+  entries = await log();
+  assert.equal(entries.length, 12);
+  assert.ok(entries.every((entry, i) => i === 0 || entry.at <= entries[i - 1].at), "newest first");
+});
+
+test("variety: a game never deals the same kind twice in a row", async () => {
+  const [host, guest] = await turnsGame();
+  let view = await getRoom(host);
+  let last = view.turn.card.kind as string;
+  for (let i = 0; i < 25; i++) {
+    await pass(whoseTurn(view, [host, guest]));
+    view = await getRoom(host);
+    assert.notEqual(view.turn.card.kind, last, `turn ${i}: ${view.turn.cardLabel}`);
+    last = view.turn.card.kind;
+  }
 });

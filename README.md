@@ -47,6 +47,16 @@ The environment variable names are listed in .env.example. Do not commit real cr
 
 Country Sprint uses UN member states, plus the Holy See, Palestine, Taiwan, and Kosovo, with common English aliases. Champion Sprint uses the English League of Legends roster from Riot Data Dragon version 16.18.1. Overwatch Hero Sprint uses Blizzard's English live hero roster as of October 2, 2026. Both game rosters accept common punctuation, accent, and spacing variants.
 
+## Turn-based cards and country stats
+
+Each turn deals one card that fits between 12 and 60 of the unclaimed countries (the range shrinks as the board empties); wild is a 3% draw. Every player also starts with a free country: not an island, 2+ land neighbours, a different subregion from the other starts. It is a round-0 claim worth 0 points that still counts for territory and region bonuses.
+
+Population, GDP, GDP per capita, time zones and flag colours live in the committed file lib/data/country-stats.json. Regenerate it (needs network) with:
+
+    node --import tsx scripts/build-country-stats.ts
+
+Sources: World Bank API (latest non-empty value), countries-and-timezones (distinct standard UTC offsets), flag-icons SVGs rasterised with resvg (a colour counts at 0.8% of the flag, orange at 3%). Countries with no value (for example GDP for North Korea) never fit cards on that stat.
+
 ## Writing UI text
 
 Keep a line only if it tells the player something they need at that moment. If deleting it loses no information, delete it. Prefer deleting to rewriting; when text is needed, make it short, plain and specific. Show state in-game (whose turn, the card, time, scores) and put rules in one place per mode: the mode picker and lobby. The earlier audit is in `docs/copy-audit.md`.
