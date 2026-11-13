@@ -83,7 +83,7 @@ export function TurnsGame({ turn, scores, players, playerId, countryClaims, skew
           {cards.length === 2 && <small className="turn-points">{turn.pointsOne} for one · {turn.pointsBoth} for both</small>}
         </div>
         <form className="guess-form" onSubmit={onSubmit}>
-          <input ref={input} className={mine ? "field turn-input active" : "field turn-input"} style={{ "--pc": tint } as React.CSSProperties} placeholder={mine ? "Country name" : watching ? "Watching sudden death" : waiting} aria-label="Country name"value={entry} onChange={(event) => onEntry(event.target.value)} readOnly={busy} disabled={!mine || seconds <= 0}/>
+          <input ref={input} className={mine ? "field turn-input active" : "field turn-input"} style={{ "--pc": tint } as React.CSSProperties} placeholder={mine ? "Country name" : watching ? "Watching sudden death" : waiting} aria-label="Country name" value={entry} onChange={(event) => onEntry(event.target.value)} readOnly={busy} disabled={!mine || seconds <= 0}/>
           <button className="primary" disabled={!mine || !entry.trim() || busy || seconds <= 0}>Claim</button>
           <button type="button" className="quiet" disabled={!mine || busy || seconds <= 0} onClick={onPass}>Pass</button>
         </form>

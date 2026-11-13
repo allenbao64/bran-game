@@ -10,7 +10,7 @@ import { WorldMap } from "@/app/world-map";
 import { TurnsGame, type ClaimLogEntry, type ClaimResult, type GuessEntry, type ScoreView, type TurnView } from "@/app/turns-game";
 import { ResultsReplay } from "@/app/replay";
 import { EmpireGame, EmpireResults, type EmpireAction, type EmpireView } from "@/app/empire-game";
-import { claimFitNote, claimRegionNote, DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, LEGACY_TURN_ROUNDS, TURN_ROUND_OPTIONS, TURN_SPEEDS } from "@/lib/turn-rules";
+import { claimFitNote, claimRegionNote, TURN_RULES_LINE, DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, LEGACY_TURN_ROUNDS, TURN_ROUND_OPTIONS, TURN_SPEEDS } from "@/lib/turn-rules";
 import { DEFAULT_EMPIRE_TURN_SECONDS, EMPIRE_TURN_SPEEDS } from "@/lib/empire/types";
 
 type Player = { id: string; name: string; host: boolean };
@@ -23,7 +23,7 @@ type Stage = "home" | "lobby" | "game" | "results";
 const ROOM_KEY = "bran-game-room";
 const MODE_RULES: Record<Mode, string> = {
   live: "Everyone names countries at once for ten minutes.",
-  turns: "Two cards each turn: fit one for 1 point, both for 3. Last 3 rounds count double. +1 for every 3 linked countries in your biggest group. Own a whole small region for +1 to +4. Tied at the end? Sudden death.",
+  turns: TURN_RULES_LINE,
   empire: "Pick a card, then claim, steal or fortify. First to 15 points."
 };
 const BUILD_VERSION = process.env.NEXT_PUBLIC_GAME_VERSION ?? "local";

@@ -24,6 +24,10 @@ export const MAX_REGION_BONUS = 4;
 /** Region bonus scales with size: 2 countries +1, 3 +2, 4 +3, 5 or 6 +4. */
 export const regionBonusPoints = (size: number) => Math.max(0, Math.min(size - 1, MAX_REGION_BONUS));
 export const MIN_TERRITORY = 3;
+/** The one rules line for turn-based play (mode picker and lobby), built from the constants so tuning them keeps the text right. */
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+export const TURN_RULES_LINE = `Two cards each turn: fit one for ${plural(POINTS_ONE_CARD, "point")}, both for ${POINTS_BOTH_CARDS}. Last ${DOUBLE_POINT_ROUNDS} rounds count double. +${TERRITORY_POINTS_PER_GROUP} for every ${TERRITORY_GROUP_SIZE} linked countries in your biggest group. Own a whole small region for +1 to +${MAX_REGION_BONUS}. A tie for first goes to sudden death.`;
+
 /** Host-selectable turn lengths in seconds (Blitz, Standard, Relaxed). */
 export const TURN_SPEEDS = [
   { id: "blitz", label: "Blitz", seconds: 10 },
@@ -145,7 +149,6 @@ export const MIN_FIT = 12;
 export const MAX_FIT = 60;
 /** Wild cards are a rare draw. */
 export const WILD_RATE = 0.03;
-/** Cards remembered for variety: six deals of two (was six single cards). */
 
 /** The fit band for a board with `unclaimed` countries left: relaxes as the board empties (never below MIN_FITTING_COUNTRIES). */
 export function fitBand(unclaimed: number) {

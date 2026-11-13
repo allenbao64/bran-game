@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, test } from "node:test";
 import { JSDOM } from "jsdom";
+import { TURN_RULES_LINE } from "@/lib/turn-rules";
 
 // React DOM decides at import time whether the browser supports input events, so
 // this file installs jsdom globals first and imports the page afterwards. That lets
@@ -176,13 +177,14 @@ test("Empire has its own speed picker (Blitz 15 s, Standard 20 s, Relaxed 30 s);
 });
 
 test("the turn-based rules line explains two cards, graded territory and sudden death in the picker and in the lobby", async () => {
-  const TURN_RULES = "Two cards each turn: fit one for 1 point, both for 3. Last 3 rounds count double. +1 for every 3 linked countries in your biggest group. Own a whole small region for +1 to +4. Tied at the end? Sudden death.";
+  const TURN_RULES = TURN_RULES_LINE;
   mount();
   act(() => button("Turn-based", ".mode-option")!.click());
   const picked = button("Turn-based", ".mode-option")!.querySelector("small");
   assert.equal(picked?.textContent, TURN_RULES, "the picker shows the rules line");
   assert.match(TURN_RULES, /Two cards each turn/);
   assert.match(TURN_RULES, /sudden death/i);
+  assert.equal(TURN_RULES, "Two cards each turn: fit one for 1 point, both for 3. Last 3 rounds count double. +1 for every 3 linked countries in your biggest group. Own a whole small region for +1 to +4. A tie for first goes to sudden death.", "the line is built from the constants");
   assert.doesNotMatch(TURN_RULES, /Biggest linked group \+2/);
   type("name", "Host");
   globalThis.fetch = (async () => new Response(JSON.stringify({
