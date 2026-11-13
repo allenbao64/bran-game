@@ -7,7 +7,7 @@ type StoredRoom = {
   mode?: string;
   turnSeconds?: number;
   rounds?: number;
-  turn?: { number: number; order: string[] };
+  turn?: { number: number; order: string[]; deal?: unknown };
   claims?: { code: string; playerId: string; points: number; round: number; turn: number; at: number }[];
   startCountries?: Record<string, string>;
   recentCards?: unknown[];
@@ -106,7 +106,7 @@ export class MemoryRedis {
           room.claims!.push({ code: starts[index], playerId: id, points: 0, round: 0, turn: -1, at: Number(args[1]) });
           room.startCountries![id] = starts[index];
         });
-        room.recentCards = [(room.turn as { card?: unknown }).card];
+        room.recentCards = [...((room.turn as { deal?: unknown[] }).deal ?? [])];
         room.recentGuesses = [];
       }
       await this.set(key, room);

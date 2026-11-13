@@ -4,7 +4,9 @@ import { allCountryFacts, countryFacts } from "@/lib/countries";
 import { countryStat } from "@/lib/country-stats";
 import {
   allCodes, cardFits, DEALT_KINDS, fitBand, MAX_FIT, MIN_FIT, RECENT_CARDS, WILD_RATE, pickStartCountries, isStartClaim, claimRegionNote, regionProgress, cardLabel, computeAwards, computeScores, dealCard, fittingCodes, isDoubleRound, largestConnectedGroup,
-  pointsForRound, smallRegions, unclaimedCodes, regionBonusPoints, largestConnectedGroupCodes, largestGroupsByPlayer, TURN_SPEEDS, isTurnSeconds, TURN_ROUND_OPTIONS, DEFAULT_TURN_ROUNDS, LEGACY_TURN_ROUNDS, isTurnRounds, type Card, type Claim
+  pointsForRound, smallRegions, unclaimedCodes, regionBonusPoints, largestConnectedGroupCodes, largestGroupsByPlayer, TURN_SPEEDS, isTurnSeconds, TURN_ROUND_OPTIONS, DEFAULT_TURN_ROUNDS, LEGACY_TURN_ROUNDS, isTurnRounds, type Card, type Claim,
+  dealCards, matchCount, fittingAll, pointsForClaim, claimFitNote, territoryPoints, topPlayers, territoryLeader, POINTS_ONE_CARD,
+  POINTS_BOTH_CARDS, TERRITORY_GROUP_SIZE, MIN_BOTH_FIT, SUDDEN_DEATH_ROUNDS, CARDS_PER_TURN, PAIR_TRIES, type Deal, type Score
 } from "@/lib/turn-rules";
 
 const claim = (code: string, playerId: string, round = 1, points = 1): Claim => ({ code, playerId, points, round, turn: 0, at: 0 });
@@ -111,25 +113,16 @@ test("connected groups follow land borders", () => {
   assert.equal(largestConnectedGroup([]), 0);
 });
 
-test("largest territory needs 3+ connected countries and must strictly beat everyone", () => {
+test("the Biggest territory award still needs 3+ linked and a strict lead", () => {
   const europe = ["FR", "DE", "BE", "NL"].map((c) => claim(c, "p1"));
   const small = ["ES", "PT"].map((c) => claim(c, "p2"));
+  assert.deepEqual(territoryLeader(["p1", "p2"], [...europe, ...small]).leader, "p1");
+  assert.equal(territoryLeader(["p1", "p2"], [...europe, ...["TH", "MM", "LA", "KH"].map((c) => claim(c, "p2"))]).leader, null, "a tie gives nobody the award");
+  assert.equal(territoryLeader(["p1", "p2"], [claim("FR", "p1"), claim("DE", "p1"), claim("ES", "p2")]).leader, null, "a group of 2 is below the minimum of 3");
+  assert.equal(territoryLeader(["p1", "p2"], ["ES", "JP", "BR"].map((c) => claim(c, "p1"))).leader, null, "disconnected countries are not a territory");
   const scores = computeScores(["p1", "p2"], [...europe, ...small]);
-  assert.equal(scores.p1.territory, 4);
-  assert.ok(scores.p1.bonuses.some((b) => b.kind === "territory" && b.points === 2));
+  assert.equal(scores.p1.territory, 4, "the group size is still reported");
   assert.equal(scores.p2.bonusTotal, 0);
-
-  const tie = computeScores(["p1", "p2"], [...europe, ...["TH", "MM", "LA", "KH"].map((c) => claim(c, "p2"))]);
-  assert.equal(tie.p1.territory, 4);
-  assert.equal(tie.p2.territory, 4);
-  assert.equal(tie.p1.bonusTotal + tie.p2.bonusTotal, 0, "a tie gives nobody the bonus");
-
-  const tooSmall = computeScores(["p1", "p2"], [claim("FR", "p1"), claim("DE", "p1"), claim("ES", "p2")]);
-  assert.equal(tooSmall.p1.bonusTotal, 0, "a group of 2 is below the minimum of 3");
-
-  const disconnected = computeScores(["p1", "p2"], ["ES", "JP", "BR"].map((c) => claim(c, "p1")));
-  assert.equal(disconnected.p1.territory, 1);
-  assert.equal(disconnected.p1.bonusTotal, 0);
 });
 
 test("final score is points (using the stored double points) plus bonuses", () => {
@@ -137,8 +130,8 @@ test("final score is points (using the stored double points) plus bonuses", () =
   const scores = computeScores(["p1", "p2"], claims);
   assert.equal(scores.p1.points, 5);
   assert.equal(scores.p1.territory, 3);
-  assert.equal(scores.p1.bonuses.length, 1, "FR-DE-BE is 3 linked against 1");
-  assert.equal(scores.p1.total, 7);
+  assert.equal(scores.p1.bonuses.length, 1, "FR-DE-BE is 3 linked: one territory bonus");
+  assert.equal(scores.p1.total, 6, "5 points plus Territory (3 linked) +1");
   assert.equal(scores.p2.total, 2);
 });
 
@@ -181,11 +174,6 @@ test("region bonus scales with region size: 2 -> +1, 3 -> +2, 4 -> +3, 5 or 6 ->
   assert.equal(sizes["Eastern Europe"], 4);
   assert.equal(sizes["Central Asia"], 5);
   assert.equal(sizes["Central Europe"], 6);
-});
-
-test("the largest-territory bonus stays at +2", () => {
-  const scores = computeScores(["p1", "p2"], ["FR", "DE", "BE"].map((c) => claim(c, "p1")));
-  assert.equal(scores.p1.bonuses.find((b) => b.kind === "territory")!.points, 2);
 });
 
 test("wild cards are a rare draw on a full board (seeded, 10,000 draws)", () => {
@@ -402,4 +390,204 @@ test("starting claims score nothing but count for territory and are skipped by t
   assert.equal(scores.p1.points, 2, "the start is worth 0");
   assert.equal(scores.p1.territory, 3, "but it links DE, FR and BE");
   assert.equal(computeAwards(["p1", "p2"], claims, 20).find((award) => award.id === "first")!.detail, "Opened the board with France");
+});
+
+test("dealCards always returns one or two cards of different kinds and at most one wild", () => {
+  const rng = seeded(11);
+  const all = allCodes();
+  let previous: Card[] = [];
+  let overlaps = 0;
+  const check = (unclaimed: string[], deals: number) => {
+    for (let i = 0; i < deals; i++) {
+      const deal = dealCards(unclaimed, rng, previous);
+      assert.ok(deal.length === 1 || deal.length === 2, `deal of ${deal.length} cards`);
+      if (deal.length === 2) {
+        assert.notEqual(deal[0].kind, deal[1].kind, "two cards of one kind");
+        assert.notEqual(cardLabel(deal[0]), cardLabel(deal[1]));
+        assert.ok(deal.filter((card) => card.kind === "wild").length <= 1, "two wilds");
+        const prevKinds = new Set(previous.slice(0, 2).map((card) => card.kind));
+        if (unclaimed.length >= 40 && !previous.slice(0, 2).some((card) => card.kind === "wild")) {
+          if (deal.some((card) => prevKinds.has(card.kind))) overlaps++;
+        }
+      }
+      previous = [...deal, ...previous].slice(0, RECENT_CARDS);
+    }
+  };
+  check(all, 3000);
+  for (let trial = 0; trial < 1000; trial++) {
+    const share = rng();
+    check(all.filter(() => rng() < share), 1);
+  }
+  assert.ok(overlaps / 3000 < 0.05, `${overlaps} deals repeated a kind from the previous deal`);
+});
+
+test("every non-wild card in a pair stays inside the fit band", () => {
+  for (const size of [200, 100, 40, 10, 5]) {
+    const rng = seeded(90 + size);
+    const all = allCodes();
+    for (let trial = 0; trial < 60; trial++) {
+      const unclaimed = [...all].sort(() => rng() - 0.5).slice(0, size);
+      const band = fitBand(unclaimed.length);
+      for (const card of dealCards(unclaimed, rng)) {
+        if (card.kind === "wild") continue;
+        const fits = fittingCodes(card, unclaimed).length;
+        assert.ok(fits >= band.min && fits <= band.max, `${cardLabel(card)}: ${fits} fit, band ${band.min}-${band.max} with ${size} unclaimed`);
+      }
+    }
+  }
+});
+
+test("a pair usually has at least MIN_BOTH_FIT answers that fit both", () => {
+  const rng = seeded(21);
+  const all = allCodes();
+  let pairs = 0, both = 0;
+  for (let i = 0; i < 500; i++) {
+    const deal = dealCards(all, rng, []);
+    if (deal.length !== 2 || deal.some((card) => card.kind === "wild")) continue;
+    pairs++;
+    if (fittingAll(deal, all).length >= MIN_BOTH_FIT) both++;
+  }
+  assert.ok(pairs > 400, `${pairs} pairs on a full board`);
+  assert.ok(both / pairs >= 0.97, `${both} of ${pairs} pairs have enough answers that fit both`);
+  const thin = dealCards(all.slice(0, 8), seeded(5), []);
+  assert.ok(thin.length >= 1 && thin.length <= 2, "a thin board still deals a pair or a single card");
+});
+
+test("a pair without enough both answers is still accepted when no better pair exists", () => {
+  const rng = seeded(31);
+  const six = ["FR", "DE", "BE", "NL", "ES", "PT"];
+  const started = Date.now();
+  for (let i = 0; i < 200; i++) {
+    const deal = dealCards(six, rng, []);
+    assert.ok(deal.length === 1 || deal.length === 2);
+    assert.ok(deal.every((card) => card.kind !== "wild") || deal.filter((card) => card.kind === "wild").length === 1);
+  }
+  assert.ok(Date.now() - started < 2000, "bounded: 200 deals on a 6-country board finish quickly");
+});
+
+test("wild appears at most once per deal, is rolled per deal, and never twice in a row", () => {
+  const all = allCodes();
+  // A roll of 0 always triggers the wild draw; the next rng value decides which side the wild is on.
+  const forced = dealCards(all, () => 0, []);
+  assert.equal(forced.filter((card) => card.kind === "wild").length, 1, "exactly one wild");
+  assert.equal(forced.length, 2);
+  const withRecentWild = dealCards(all, () => 0, [{ kind: "wild" }, { kind: "landlocked" }]);
+  assert.ok(withRecentWild.every((card) => card.kind !== "wild"), "no wild right after a deal that had one");
+  const rng = seeded(41);
+  let wildDeals = 0;
+  const deals = 4000;
+  let previous: Card[] = [];
+  for (let i = 0; i < deals; i++) {
+    const deal = dealCards(all, rng, previous);
+    if (deal.some((card) => card.kind === "wild")) wildDeals++;
+    previous = [...deal, ...previous].slice(0, RECENT_CARDS);
+  }
+  const share = wildDeals / deals;
+  assert.ok(share >= 0.02 && share <= 0.04, `wild share ${(share * 100).toFixed(2)}%`);
+});
+
+test("late in the game: with no card meeting the band the deal is a single wild", () => {
+  assert.deepEqual(dealCards(["FR", "DE"], seeded(3)), [{ kind: "wild" }]);
+  assert.deepEqual(dealCards([], seeded(3)), [{ kind: "wild" }]);
+  const rng = seeded(8);
+  for (let i = 0; i < 100; i++) {
+    const deal = dealCards(["FR", "DE", "BE", "NL", "ES", "PT"].slice(0, 4 + (i % 3)), rng, []);
+    assert.ok(deal.length === 1 || deal.length === 2, `${deal.length} cards with a late board`);
+  }
+});
+
+test("matchCount and pointsForClaim: one card is 1, both is 3, last three rounds double, sudden death does not", () => {
+  const letterA: Card = { kind: "letter", letter: "A" };
+  const landlocked: Card = { kind: "landlocked" };
+  const pair: Deal = [letterA, landlocked];
+  assert.equal(matchCount(pair, "AT"), 2, "Austria starts with A and is landlocked");
+  assert.equal(matchCount(pair, "CH"), 1, "a claim that fits only the second card matches one");
+  assert.equal(matchCount(pair, "FR"), 0);
+  for (const total of [15, 20, 30]) {
+    const edge = total - 3;
+    const table: [number, number, number, number, boolean | undefined, number][] = [
+      [1, 2, 1, total, undefined, 1],
+      [2, 2, 1, total, undefined, 3],
+      [1, 2, total - 2, total, undefined, 2],
+      [2, 2, total, total, undefined, 6],
+      [2, 2, total + 1, total, true, 3],
+      [1, 2, total + 1, total, true, 1],
+      [0, 2, total, total, undefined, 0],
+      [1, 1, total, total, undefined, 2],
+      [1, 1, total - 2, total, undefined, 2],
+      [2, 2, edge, total, undefined, 1 * 3]
+    ];
+    for (const [matched, size, round, rounds, sudden, expected] of table) {
+      assert.equal(pointsForClaim(matched, size, round, rounds, sudden), expected, `${total} rounds: matched ${matched} of ${size} in round ${round}`);
+    }
+  }
+  assert.equal(pointsForClaim(2, 2, 13, 12, true), 3);
+  assert.equal(pointsForClaim(1, 1, 13, 12, true), 1);
+});
+
+test("wild in a pair counts as fitting: wild + X scores 3 when X fits and 1 otherwise", () => {
+  const pair: Deal = [{ kind: "landlocked" }, { kind: "wild" }];
+  assert.equal(matchCount(pair, "CH"), 2);
+  assert.equal(matchCount(pair, "FR"), 1);
+  assert.equal(matchCount([{ kind: "wild" }], "FR"), 1);
+  assert.equal(pointsForClaim(matchCount(pair, "CH"), pair.length, 1, 12), 3);
+  assert.equal(pointsForClaim(matchCount(pair, "FR"), pair.length, 1, 12), 1);
+});
+
+test("fittingAll lists countries that fit every card", () => {
+  const deal: Deal = [{ kind: "letter", letter: "A" }, { kind: "landlocked" }];
+  assert.deepEqual(fittingAll(deal, ["CH", "AT", "AL", "FR"]), ["AT"]);
+  assert.deepEqual(fittingAll([{ kind: "wild" }], ["CH", "FR"]), ["CH", "FR"]);
+});
+
+test("graded territory: +1 per 3 linked countries in your own largest group", () => {
+  assert.deepEqual([2, 3, 5, 6, 9].map(territoryPoints), [0, 1, 1, 2, 3]);
+  const four = ["FR", "DE", "BE", "NL"].map((c) => claim(c, "p1"));
+  const fourScores = computeScores(["p1", "p2"], [...four, claim("ES", "p2"), claim("PT", "p2")]);
+  assert.equal(fourScores.p1.territory, 4);
+  assert.deepEqual(fourScores.p1.bonuses, [{ kind: "territory", label: "Territory (4 linked)", points: 1 }]);
+  assert.equal(fourScores.p2.bonusTotal, 0, "ES and PT are a group of 2");
+
+  const tie = computeScores(["p1", "p2"], [...four, ...["TH", "MM", "LA", "KH"].map((c) => claim(c, "p2"))]);
+  assert.equal(tie.p1.bonusTotal, 1);
+  assert.equal(tie.p2.bonusTotal, 1, "a tie in size scores for both");
+
+  const withStart = computeScores(["p1"], [{ ...claim("DE", "p1", 0, 0), turn: -1 }, claim("FR", "p1"), claim("BE", "p1"), claim("NL", "p1")]);
+  assert.equal(withStart.p1.bonusTotal, 1, "the starting country counts for territory");
+
+  const disconnected = computeScores(["p1"], ["ES", "JP", "BR"].map((c) => claim(c, "p1")));
+  assert.equal(disconnected.p1.bonusTotal, 0);
+
+  const biggest = largestConnectedGroupCodes(allCodes());
+  const big = computeScores(["p1"], biggest.map((c) => claim(c, "p1")));
+  assert.equal(big.p1.territory, biggest.length);
+  assert.equal(big.p1.bonuses.find((b) => b.kind === "territory")?.points, Math.floor(biggest.length / 3));
+});
+
+test("claimFitNote: both, one, and nothing for unknown fit or one-card deals", () => {
+  assert.equal(claimFitNote(2, 2, 3), "Both cards: +3");
+  assert.equal(claimFitNote(1, 2, 1), "One card: +1");
+  assert.equal(claimFitNote(1, 2, 2), "One card: +2", "doubled points are shown as stored");
+  assert.equal(claimFitNote(undefined, 2, 3), "");
+  assert.equal(claimFitNote(1, 1, 1), "");
+});
+
+test("constants are exported with the owner's numbers", () => {
+  assert.equal(POINTS_ONE_CARD, 1);
+  assert.equal(POINTS_BOTH_CARDS, 3);
+  assert.equal(TERRITORY_GROUP_SIZE, 3);
+  assert.equal(MIN_BOTH_FIT, 2);
+  assert.equal(SUDDEN_DEATH_ROUNDS, 3);
+  assert.equal(CARDS_PER_TURN, 2);
+  assert.equal(RECENT_CARDS, 12);
+});
+
+test("topPlayers returns every tied leader in player order", () => {
+  const scores = {
+    a: { total: 5 } as Score, b: { total: 7 } as Score, c: { total: 7 } as Score, d: { total: 2 } as Score
+  };
+  assert.deepEqual(topPlayers(["a", "b", "c", "d"], scores), ["b", "c"]);
+  assert.deepEqual(topPlayers(["d", "c", "b"], scores), ["c", "b"], "player order, not score order");
+  assert.deepEqual(topPlayers(["a"], scores), ["a"]);
+  assert.deepEqual(topPlayers([], {}), []);
 });
