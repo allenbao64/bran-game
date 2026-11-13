@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MAP_HEIGHT, MAP_WIDTH, mapDots, mapFeatures as countries, mapPath as path } from "@/lib/world-geometry";
-import { IDENTITY_VIEW, MAX_ZOOM, MIN_ZOOM, panBy, pinchView, wheelFactor, wheelIntent, zoomAt, ZOOM_STEP, type MapView } from "@/lib/map-zoom";
+import { dragSpeed, GLIDE_DECAY, GLIDE_MIN_SPEED, IDENTITY_VIEW, MAX_ZOOM, MIN_ZOOM, panBy, pinchView, wheelFactor, wheelIntent, zoomAt, ZOOM_STEP, type MapView } from "@/lib/map-zoom";
 import { countryCodeFromNumericId } from "@/lib/countries";
 import { playerColor } from "@/lib/player-colors";
 
@@ -34,6 +34,8 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
   const [view, setView] = useState<MapView>(IDENTITY_VIEW);
   const svgRef = useRef<SVGSVGElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const velocity = useRef({ x: 0, y: 0, at: 0 });
+  const glide = useRef(0);
   const viewRef = useRef(view);
   viewRef.current = view;
   const update = (next: MapView) => { viewRef.current = next; setView(next); };
@@ -63,6 +65,8 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
   }, [zoomable]);
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    cancelAnimationFrame(glide.current);
+    velocity.current = { x: 0, y: 0, at: performance.now() };
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (event.pointerType === "mouse" || viewRef.current.k > 1 || pointers.current.size > 1) event.currentTarget.setPointerCapture?.(event.pointerId);
   };
@@ -74,12 +78,29 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
       pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
       update(pinchView(viewRef.current, from, pinchOf(), MAP_WIDTH, MAP_HEIGHT));
     } else if (pointers.current.size === 1 && viewRef.current.k > 1) {
-      const scale = toMap(0, 0).scale;
+      const scale = toMap(0, 0).scale * dragSpeed(viewRef.current.k);
+      const dx = (event.clientX - last.x) * scale, dy = (event.clientY - last.y) * scale;
+      const now = performance.now(), dt = Math.max(1, now - velocity.current.at);
+      velocity.current = { x: 0.6 * dx / dt + 0.4 * velocity.current.x, y: 0.6 * dy / dt + 0.4 * velocity.current.y, at: now };
       pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      update(panBy(viewRef.current, (event.clientX - last.x) * scale, (event.clientY - last.y) * scale, MAP_WIDTH, MAP_HEIGHT));
+      update(panBy(viewRef.current, dx, dy, MAP_WIDTH, MAP_HEIGHT));
     }
   };
-  const onPointerEnd = (event: React.PointerEvent<SVGSVGElement>) => { pointers.current.delete(event.pointerId); };
+  const onPointerEnd = (event: React.PointerEvent<SVGSVGElement>) => {
+    const wasPanning = pointers.current.size === 1 && viewRef.current.k > 1;
+    pointers.current.delete(event.pointerId);
+    let { x: vx, y: vy, at } = velocity.current;
+    if (!wasPanning || performance.now() - at > 80 || Math.hypot(vx, vy) < GLIDE_MIN_SPEED) return;
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = now - last; last = now;
+      update(panBy(viewRef.current, vx * dt, vy * dt, MAP_WIDTH, MAP_HEIGHT));
+      vx *= GLIDE_DECAY; vy *= GLIDE_DECAY;
+      if (Math.hypot(vx, vy) >= GLIDE_MIN_SPEED) glide.current = requestAnimationFrame(step);
+    };
+    glide.current = requestAnimationFrame(step);
+  };
+  useEffect(() => () => cancelAnimationFrame(glide.current), []);
   const zoomBy = (factor: number) => update(zoomAt(viewRef.current, factor, MAP_WIDTH / 2, MAP_HEIGHT / 2, MAP_WIDTH, MAP_HEIGHT));
   const zoomed = view.k > 1;
 
