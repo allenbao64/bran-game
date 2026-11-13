@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MAP_HEIGHT, MAP_WIDTH, mapDots, mapFeatures as countries, mapPath as path } from "@/lib/world-geometry";
-import { IDENTITY_VIEW, MAX_ZOOM, MIN_ZOOM, panBy, pinchView, wheelFactor, zoomAt, ZOOM_STEP, type MapView } from "@/lib/map-zoom";
+import { IDENTITY_VIEW, MAX_ZOOM, MIN_ZOOM, panBy, pinchView, wheelFactor, wheelIntent, zoomAt, ZOOM_STEP, type MapView } from "@/lib/map-zoom";
 import { countryCodeFromNumericId } from "@/lib/countries";
 import { playerColor } from "@/lib/player-colors";
 
@@ -54,7 +54,9 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const at = toMap(event.clientX, event.clientY);
-      update(zoomAt(viewRef.current, wheelFactor(event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY), at.x, at.y, MAP_WIDTH, MAP_HEIGHT));
+      const lines = event.deltaMode === 1 ? 16 : 1;
+      if (wheelIntent(event) === "zoom") update(zoomAt(viewRef.current, wheelFactor(event.deltaY * lines), at.x, at.y, MAP_WIDTH, MAP_HEIGHT));
+      else update(panBy(viewRef.current, -event.deltaX * lines * at.scale, -event.deltaY * lines * at.scale, MAP_WIDTH, MAP_HEIGHT));
     };
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);

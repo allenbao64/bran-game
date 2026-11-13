@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clampView, IDENTITY_VIEW, MAX_ZOOM, MIN_ZOOM, panBy, pinchView, wheelFactor, zoomAt } from "@/lib/map-zoom";
+import { clampView, IDENTITY_VIEW, MAX_ZOOM, MIN_ZOOM, panBy, pinchView, wheelFactor, wheelIntent, zoomAt } from "@/lib/map-zoom";
 
 const W = 900, H = 450;
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
@@ -48,4 +48,15 @@ test("wheel up zooms in, wheel down zooms out", () => {
   assert.ok(wheelFactor(-100) > 1);
   assert.ok(wheelFactor(100) < 1);
   assert.equal(wheelFactor(0), 1);
+});
+
+test("trackpad swipes pan the map, mouse wheels and pinches zoom it", () => {
+  const wheel = (deltaX: number, deltaY: number, extra: { deltaMode?: number; ctrlKey?: boolean } = {}) => wheelIntent({ deltaX, deltaY, deltaMode: 0, ctrlKey: false, ...extra });
+  assert.equal(wheel(40, 0), "pan");
+  assert.equal(wheel(12.5, -3), "pan");
+  assert.equal(wheel(0, 8), "pan");
+  assert.equal(wheel(0, 100), "zoom");
+  assert.equal(wheel(0, -120), "zoom");
+  assert.equal(wheel(0, 3, { deltaMode: 1 }), "zoom");
+  assert.equal(wheel(0, 4.2, { ctrlKey: true }), "zoom");
 });

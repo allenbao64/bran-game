@@ -32,3 +32,11 @@ export function pinchView(view: MapView, from: { x: number; y: number; dist: num
 
 /** Wheel notches to a zoom factor; scrolling up zooms in. */
 export const wheelFactor = (deltaY: number) => Math.exp(-clamp(deltaY, -200, 200) * 0.0025);
+
+type WheelInput = { deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean };
+/** Trackpad pinches (ctrlKey) and mouse-wheel notches zoom; two-finger trackpad swipes and shift+wheel pan. */
+export function wheelIntent({ deltaX, deltaY, deltaMode, ctrlKey }: WheelInput): "zoom" | "pan" {
+  if (ctrlKey) return "zoom";
+  if (deltaX !== 0) return "pan";
+  return deltaMode !== 0 || (Number.isInteger(deltaY) && Math.abs(deltaY) >= 50) ? "zoom" : "pan";
+}
