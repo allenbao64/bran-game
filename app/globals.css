@@ -66,7 +66,7 @@
 .map-country.region-highlight,.map-dot.region-highlight{vector-effect:non-scaling-stroke}
 
 /* Turn-based screen: frozen top bar, big map, narrow side column. Scoped to .turns-layout so live and empire screens keep their spacing. */
-.game.turns-layout{grid-template-columns:minmax(0,1fr) clamp(260px,30%,360px);gap:8px 22px;padding:0 0 14px;align-items:start}
+.content:has(.turns-layout){max-width:1640px;width:calc(100% - 64px)}.game.turns-layout{grid-template-columns:minmax(0,1fr) clamp(270px,22%,340px);gap:8px 22px;padding:0 0 14px;align-items:start}
 .turns-layout .turn-bar{grid-column:1/-1;position:sticky;top:0;z-index:30;background:var(--paper);border-bottom:1px solid var(--line);padding:6px 0 4px}
 .turns-layout .turn-bar-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 14px}
 .turns-layout .turn-status{font-size:15px;font-weight:700;white-space:nowrap}.turns-layout .turn-status .turn-clock{font:500 15px 'DM Mono',monospace;color:inherit}.turns-layout .turn-status.urgent .turn-clock{color:var(--orange)}.turns-layout .turn-status span{opacity:.7}
