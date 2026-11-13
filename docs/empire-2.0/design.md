@@ -1,6 +1,6 @@
 # Empire 2.0: Gameplay Design
 
-Last updated 2026-10-20. Source: the "Empire 2.0: Gameplay Design" Claude doc (rev 15). This file is the same content, kept in the repo so it is versioned with the code.
+Last updated 2026-11-13. Source: the "Empire 2.0: Gameplay Design" Claude doc (rev 15). This file is ahead of that doc: it adds five approved changes (expand cap, colonize relief, back-to-back turns, flat boom, Empire 1 decision) that the doc does not have yet. Otherwise it is the same content, kept in the repo so it is versioned with the code.
 
 ## Summary
 
@@ -39,22 +39,28 @@ Like Catan's opening placements, setup runs in snake order so the last to pick a
 ### Each round
 
 1. **Income:** every player collects influence from their empire and cities (see the economy section). A player at least 2 victory points behind the leader gets 2 more.
-2. **Boom:** three regions are drawn at random and shown to everyone. Each country you own in a booming region pays 1 influence, or 2 if it has a city.
+2. **Boom:** three regions are drawn at random and shown to everyone. Each booming region pays 1 influence to every player who owns at least one country in it, or 2 if that player has a city in that region. It pays once per region, however many countries you own there.
 3. **Bounties:** two bounty cards are revealed, for example "Landlocked" or "Starts with B". The first player to expand into or colonize a country that fits one collects 2 influence, and that card is gone.
-4. **Turns:** each player takes a turn in snake order: 1-2-3, then 3-2-1, then 1-2-3.
+4. **Turns:** each player takes a turn in snake order: 1-2-3, then 3-2-1, then 1-2-3. One player gets two turns in a row at each round boundary (see "Back-to-back turns").
 5. Every 4th round, a world event applies for the next round.
+
+### Back-to-back turns
+
+Snake order gives one player two turns in a row at each round boundary: the player who goes last in one round also goes first in the next. Their first turn of the two is a normal turn. On the second, they cannot annex and cannot win (see "Ending" for how the win works). Setup picks are not affected.
 
 ### Your turn (30 seconds)
 
-Within the clock, take any number of actions you can afford, in any order:
+Within the clock, take any actions you can afford, in any order, within the limits under the table:
 
 | Action | Cost | What you name | Effect |
 |---|---|---|---|
-| Expand | Free once a turn, then 1 | A free country bordering your empire | You own it |
-| Colonize | 4 | Any free country | You own it, anywhere on the map |
+| Expand | Free the first time each turn, then 1 each, up to 2 paid (3 in all) | A free country bordering your empire | You own it |
+| Colonize | 4, or 2 for your first colonize if no free country borders your empire at the start of your turn | Any free country | You own it, anywhere on the map |
 | Build a city | 3 | The capital city of one of your countries | Double income there, 1 victory point, can't be annexed. Up to 4 cities. |
-| Annex | 5 | The capital of a rival's country that borders yours | You take it. Once a turn. |
+| Annex | 5 | The capital of a rival's country that borders yours | You take it. Once a turn, and not on the second of two turns in a row. |
 | End turn | Free | | Passes play on |
+
+Limits: at most 3 expands a turn (the free one and 2 paid ones), one annex a turn, and no annex on the second of two turns in a row. Colonizing and building cities have no limit beyond what you can afford.
 
 A wrong answer costs nothing, so you can try again while the clock runs. When the clock runs out, your turn ends and unspent influence carries over.
 
@@ -66,9 +72,9 @@ Your empire can only grow from its edges, so where you are decides what you can 
 
 - **Frontier:** every free country that borders one you own, by land or sea route, is on your frontier. Expanding into it is cheap. The map lightly highlights your frontier on your turn.
 - **Sea routes:** islands link to their 2 nearest countries, as in Empire 1, so Japan, the UK and the Caribbean are reachable without colonizing.
-- **Colonize:** claiming a free country off your frontier costs 4. It opens a new front, which matters for the explorer title and for reaching a region set.
+- **Colonize:** claiming a free country off your frontier costs 4. If no free country borders your empire at the start of your turn, your first colonize that turn costs 2 instead. This is checked once, at the start of the turn, and it does not add to Trade winds (both make colonizing cost 2, never less). It opens a new front, which matters for the explorer title and for reaching a region set.
 - **Blocking:** an owned country stops a rival's expansion through it. Chokepoints such as Turkey, Egypt, Panama and Kazakhstan become worth racing for, like a contested crossroads in Catan.
-- **Running out of room:** once your frontier is all taken, you must colonize or annex to grow. Empires collide in the mid-game, which is when annexing starts to matter.
+- **Running out of room:** once your frontier is all taken, you must colonize or annex to grow, and the first colonize of your next turn costs 2. Empires collide in the mid-game, which is when annexing starts to matter.
 - **Small countries:** the tiny-country dots on the map work the same as shapes for frontiers and claims.
 
 ## The influence economy
@@ -82,21 +88,23 @@ Influence is the game's one resource. A bigger empire earns more, cities earn th
 | Base | 2 |
 | Territory | 1 per 4 countries you own |
 | Each city | 1 |
-| Boom (3 random regions) | 1 per country you own there, 2 if it has a city |
+| Boom (3 random regions) | 1 per booming region where you own a country, 2 if you have a city in that region |
 | Underdog (2+ victory points behind the leader) | 2 |
 | Bounty card (on claim, not per round) | 2, once per card |
 
-Rough income by stage, from these numbers: about 3 a round early, 5 to 7 mid-game, 8 or more late. Simulation will confirm.
+Rough income by stage, before booms and underdog income: about 3 a round early (4 to 7 countries, no city), 5 to 7 mid-game (8 to 11 countries, 1 to 3 cities), 8 or more late (12 or more countries, 3 to 4 cities). A boom adds on top of that: 1 or 2 for each of the three booming regions where you own a country, so usually 0 to 3 a round and 6 at most. These are paper estimates, not simulated results. Simulation will confirm.
 
 ### Costs
 
 | Action | Cost |
 |---|---|
 | First expand each turn | Free |
-| Each further expand | 1 |
+| Each further expand, up to 2 a turn | 1 |
 | Build a city | 3 |
-| Colonize | 4 |
+| Colonize | 4 (2 for the first colonize of a turn that starts with no free country on your frontier) |
 | Annex | 5 |
+
+Expands are capped at 3 a turn: the free one and at most 2 paid ones.
 
 ### Why this creates an arc
 
@@ -108,7 +116,7 @@ The classic tension is spend versus build: a city costs three expansions today b
 
 ## Victory points and the end of the game
 
-The first player to reach 10 victory points at the end of their own turn wins. There are several roads to 10, so players with different strengths can each win.
+The first player to have 10 victory points at the end of their own turn wins, with one exception on a second turn in a row (see "Ending"). There are several roads to 10, so players with different strengths can each win.
 
 | Source | Victory points | Notes |
 |---|---|---|
@@ -122,7 +130,11 @@ Largest empire and explorer pull in opposite directions: one rewards growing in 
 
 An example winning mix: 12 countries (3), 3 cities (3), a small region set (2) and largest empire (2) makes 10.
 
-**Ending:** the game ends the moment a player reaches 10 at the end of their turn, or after round 20 as a safety cap, when the most victory points wins. Ties go to more influence left, then share the win.
+**Ending:** the game ends the moment a player has 10 or more victory points at the end of their own turn, except as follows.
+
+- **Second turn in a row:** a player cannot win at the end of the second of two turns in a row. If they have 10 or more at the end of it, they win at the end of their next turn if they still have 10 or more then. If they have fewer than 10 by then, the game goes on and they can win at the end of any later turn as normal. Their next turn is never itself a second turn in a row.
+- **Someone else gets there first:** a waiting win is not a claim on the game. If another player ends a turn with 10 or more before the waiting player's next turn, that other player wins at once.
+- **Round 20 cap:** if nobody has won by the end of round 20, the game ends and the most victory points wins. Waiting wins do not count for anything at the cap; only points do. Ties go to more influence left, then share the win.
 
 ## Interaction between players
 
@@ -133,7 +145,7 @@ Players affect each other in four ways: blocking, annexing, racing for bounties 
 - Costs 5 influence and needs the target country's capital named correctly. A wrong capital costs nothing but uses that action's time.
 - The target must border your empire and belong to a player at or above you in the round-start standings, so nobody kicks someone who is already behind.
 - Cities, starting capitals, footholds from setup and countries in a completed region set can't be annexed.
-- Once a turn. Losing a country can break a rival's largest empire or region set, so annexes are the big swing moments.
+- Once a turn, and not on the second of two turns in a row (see "Back-to-back turns"). Losing a country can break a rival's largest empire or region set, so annexes are the big swing moments.
 
 ### Blocking
 
@@ -160,7 +172,7 @@ Being behind is measured at the start of each round, when everyone has had the s
 - **Round-start standings:** victory points are snapshotted when each round begins. Every "who is behind" rule reads that snapshot, never mid-round totals.
 - **Underdog income:** +2 influence a round for anyone at least 2 victory points behind the leader. It adds options rather than taking anything from the leader.
 - **Annex only upward:** you can only annex from players at or above you, so the leader is the one exposed.
-- **Snake order:** 1-2-3, then 3-2-1, so no one always goes first or last. Setup uses the same order.
+- **Snake order:** 1-2-3, then 3-2-1, so no one always goes first or last. It gives one player two turns in a row at each round boundary, so that second turn has no annex and no win (see "Back-to-back turns"). Setup uses the same order, and those limits do not apply to setup picks.
 - **Hard to target one player:** booms and world events hit everyone at once, which the research flags as a fix for three-player ganging up.
 - **No bonus for falling behind on purpose:** the underdog boost is small and income-only, so it can't beat simply playing well.
 
@@ -172,9 +184,9 @@ A 3-player game should run about 12 to 16 rounds, or 15 to 25 minutes, assuming 
 
 Ana, Ben and Cara play. These are illustrations of the intended feel, not simulated results.
 
-- **Rounds 1–4, the land grab:** Ana picks Germany and a second foothold in Kenya. Ben starts in Brazil, Cara in India. Each turn is a free expand and maybe one paid one. A boom in Western Europe pays Ana 3, and she races Ben to Spain.
+- **Rounds 1–4, the land grab:** Ana picks Germany and a second foothold in Kenya. Ben starts in Brazil, Cara in India. Each turn is a free expand and maybe one paid one. A boom in Western Europe pays Ana 1, and she races Ben to Spain.
 - **Rounds 5–9, building up:** frontiers meet in the Middle East. Cara grabs Turkey and blocks Ana's route east. Ana builds two cities to bank income and points. Ben colonizes Australia to chase the explorer title and the Australia and New Zealand set.
-- **Rounds 10–14, the squeeze:** free land is scarce. Cara is on 8 points, so she's annexable by both rivals. Ana pays 5, names Ankara, takes Turkey back, and breaks Cara's largest empire. Ben finishes his Oceania set and takes the explorer title to reach 10 at the end of his turn.
+- **Rounds 10–14, the squeeze:** free land is scarce. Cara is on 8 points, so she's annexable by both rivals. In round 12, when Ana goes last and it is the first of her two turns in a row, she pays 5, names Ankara, takes Turkey back, and breaks Cara's largest empire. Ben, in the middle seat, never has two turns in a row. He finishes his Oceania set and takes the explorer title to reach 10 at the end of his turn.
 
 ### What each stage should feel like
 
@@ -195,7 +207,7 @@ On paper, Empire 2.0 fixes Empire 1's main weaknesses: no build-up, a map that d
 | Interesting decisions | One choice a turn: which country | Spend versus build, direction, block versus grow, which title to chase |
 | A sense of progress | Flat: turn 14 felt like turn 1 | Income and cities grow, so late turns do more |
 | Luck you react to | Cards dealt before acting | Booms and bounties are revealed before turns. Base income cushions bad booms. |
-| Fair catch-up | Favoured whoever went last | Round-start standings, small income boost, annex only upward |
+| Fair catch-up | Favoured whoever went last | Round-start standings, small income boost, annex only upward, no annex or win on a second turn in a row |
 | Three-player problem | Steals could pile on | Annex once a turn, upward only, protected cities and sets |
 | Off-turn engagement | Watching only | Booms, bounties and watching frontiers close |
 | Length | A few minutes | 15–25 minutes |
@@ -203,10 +215,12 @@ On paper, Empire 2.0 fixes Empire 1's main weaknesses: no build-up, a map that d
 ### Risks
 
 - **Too much to learn for a party game:** 4 actions, 5 victory point sources and an economy. Fix: a first-game guide, cost labels on every button, and a victory-point bar that says where each point came from.
-- **Typing several answers in 30 seconds:** strong typists may chain expands. Fix: costs after the first expand limit chaining; check in simulation.
-- **Rich get richer:** territory income rewards the leader. Fix: income per 4 countries, not per country, plus annexing upward and underdog income. Watch the comeback rate.
+- **Typing several answers in 30 seconds:** with mid-game income of 5 to 7, a fast typist could chain six expands in one turn. Fix: at most 2 paid expands a turn on top of the free one (3 expands in all), plus the cost of each paid expand; check in simulation.
+- **Rich get richer:** territory income rewards the leader. Fix: income per 4 countries, not per country, booms that pay per region and not per country, plus annexing upward and underdog income. Watch the comeback rate.
 - **A dominant strategy:** for example, cities-only might always win. Fix: compare bot strategies in simulation.
 - **Booms feel random:** fix: base income, and booms shown before anyone acts.
+- **Boxed in:** a player with no free country on their frontier and about 3 income could be stuck. Fix: the first colonize of a turn costs 2 when no free country borders their empire at the start of it; check in simulation how often this happens.
+- **Double turns:** snake order gives one player two turns in a row at each round boundary, and with several actions a turn that is too strong (two annexes in a row, or going from 8 to 10 points with no reply). Fix: no annex and no win on the second of the two turns; a player with 10 or more points then wins at the end of their next turn if they still have 10 or more.
 
 ### What to measure before building screens
 
@@ -216,6 +230,9 @@ On paper, Empire 2.0 fixes Empire 1's main weaknesses: no build-up, a map that d
 - [ ] Win rate by seat within 5 points of even
 - [ ] The player in last place at round 6 wins at least 15% of games
 - [ ] Every game has at least one change of leader after round 5
+- [ ] How often a turn uses all 3 expands
+- [ ] How often a player starts a turn with no free country on their frontier, and whether the 2-influence colonize gets them moving again
+- [ ] How often a player ends a second turn in a row with 10 or more points, and how often they still have 10 or more at their next turn
 - [ ] One paper playtest with a printed map, or a bare-bones version in the app, before the full screens
 
 ## Build plan
@@ -224,7 +241,7 @@ The rules engine and a bot simulation come first, and the numbers get tuned befo
 
 | Phase | What gets built | Gate to move on |
 |---|---|---|
-| 1. Rules engine | New `lib/empire2/` folder: setup picks, snake order, income and booms, bounties, the four actions, victory points, titles, events, round-start standings | Unit tests for every rule in this doc |
+| 1. Rules engine | New `lib/empire2/` folder: setup picks, snake order and back-to-back turn limits, income and flat booms, bounties, the four actions (with the 3-expand cap and the colonize relief), victory points and the delayed win, titles, events, round-start standings | Unit tests for every rule in this doc |
 | 2. Simulation and tuning | Bots with 4 strategies; 2,000-game runs; adjust costs, income and the 10-point target | Every check in the audit section passes |
 | 3. Paper or bare-bones playtest | A plain screen with buttons and the map, no polish | You and friends play 2–3 games and say it's fun |
 | 4. Server | Room state, actions endpoint, setup flow, timeouts, saves | Route tests, including a full game through the API |
@@ -232,4 +249,4 @@ The rules engine and a bot simulation come first, and the numbers get tuned befo
 | 6. Polish | Animations for annexes, sets and titles; results replay with awards | Second playtest |
 | Later | Trading between players | After the core game is proven |
 
-**Decision for you:** when Empire 2.0 is ready, should it replace Empire 1, or should both stay as separate modes for a while?
+**Decision (made):** Empire 1 is frozen, with bug fixes only. Empire 2.0 replaces it once 2.0 passes its phase 3 playtest gate. Until then Empire 1 stays available.
