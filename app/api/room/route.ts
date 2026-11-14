@@ -5,7 +5,7 @@ import { gameConfig, isGameId, type GameId } from "@/lib/games";
 import { DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, isStartClaim, isTurnRounds, isTurnSeconds, LEGACY_TURN_ROUNDS } from "@/lib/turn-rules";
 import { DEFAULT_EMPIRE_TURN_SECONDS, isEmpireTurnSeconds } from "@/lib/empire/types";
 import {
-  applyPass, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, pickTurnStarts, runTurnAction, turnSnapshot, type TurnRoom
+  applyPass, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, logGameStart, logHostEnd, pickTurnStarts, runTurnAction, turnSnapshot, type TurnRoom
 } from "@/lib/turn-room";
 import { empireSnapshot, isEmpireRoom, loadSyncedEmpireRoom } from "@/lib/empire-room";
 
@@ -120,6 +120,7 @@ export async function POST(request: NextRequest) {
       const started = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> }>(result);
       if (started.error) return error(started.error);
       if (!started.ok) return error("Could not start this round. Please try again.");
+      if (turnsRoom && started.startedAt && started.players) await logGameStart(redis, turnsRoom, { startedAt: started.startedAt, players: started.players }, starts);
       return NextResponse.json({ code, gameId: started.gameId ?? "countries", mode: started.mode ?? "live", ...(existing?.turnSeconds && (isTurnsRoom(existing) || isEmpireRoom(existing)) ? { turnSeconds: existing.turnSeconds } : {}), ...(existing && isTurnsRoom(existing) ? { rounds: existing.rounds ?? LEGACY_TURN_ROUNDS } : {}), status: started.status, startedAt: started.startedAt, players: started.players });
     }
 
@@ -143,6 +144,7 @@ export async function POST(request: NextRequest) {
       const ended = parseScriptResult<{ error?: string; ok?: boolean; status?: Room["status"] }>(result);
       if (ended.error) return error(ended.error);
       if (!ended.ok) return error("Could not end this round. Please try again.");
+      await logHostEnd(redis, key);
       return NextResponse.json({ code, status: ended.status });
     }
 
