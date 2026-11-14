@@ -129,7 +129,8 @@ test("starting a turns room deals the first card to the first player", async () 
   assert.equal(view.turn.doubleRound, false);
   assert.equal(view.turn.cards.length, 2, "every turn deals two cards");
   assert.ok(view.turn.cards.every((card: { label?: string }) => card.label));
-  assert.equal("card" in view.turn || "cardLabel" in view.turn, false, "the single-card fields are gone");
+  assert.deepEqual(view.turn.card, view.turn.cards[0], "the legacy card field is the first card");
+  assert.equal(view.turn.cardLabel, `${view.turn.cards[0].label} or ${view.turn.cards[1].label}`, "the legacy label joins both cards");
   assert.equal(view.turn.turnMs, 15000);
   assert.equal(view.turn.startedAt, clock);
   assert.ok(!JSON.stringify(view).includes(host.token), "tokens never leak");
@@ -796,6 +797,52 @@ test("normalizeTurnRoom turns legacy and Lua-damaged shapes into arrays and a nu
   assert.deepEqual(legacy.turn!.deal, [{ kind: "landlocked" }]);
   assert.equal("card" in legacy.turn!, false);
   assert.deepEqual(normalizeTurnRoom(structuredClone(legacy)).turn!.deal, [{ kind: "landlocked" }], "idempotent");
+});
+
+test("a host-ended game keeps turn.finished false while a played-out game sets it", async () => {
+  const sessions = await turnsGame(2);
+  const [host] = sessions;
+  let view = await getRoom(host);
+  assert.equal((await claim(whoseTurn(view, sessions), pickFitting(view))).status, 200);
+  const ended = await postRoom({ action: "end", code: host.code, token: host.token, name: "Host" });
+  assert.equal(ended.status, 200);
+  view = await getRoom(host);
+  assert.equal(view.status, "ended");
+  assert.equal(view.turn.finished, false, "the host ended it early, so the turn was not finished");
+  assert.ok(Array.isArray(view.winners), "winners are present once the game has ended");
+
+  const playedSessions = await legacyGame(2);
+  clock += 15_000 * 24 + 15_000 * 6;
+  view = await getRoom(playedSessions[1]);
+  assert.equal(view.status, "ended");
+  assert.equal(view.turn.finished, true, "a game played out to its end sets turn.finished");
+});
+
+test("snapshot keeps the legacy single card fields for tabs on the old client", async () => {
+  const [host, guest] = await turnsGame();
+  let view = await getRoom(host);
+  assert.equal(view.turn.cards.length, 2);
+  assert.equal(view.turn.cardLabel, `${view.turn.cards[0].label} or ${view.turn.cards[1].label}`);
+  assert.deepEqual(view.turn.card, view.turn.cards[0]);
+  assert.ok("kind" in view.turn.card);
+
+  const key = `bran:room:${host.code}`;
+  const saved = (await store.get<Record<string, any>>(key))!;
+  saved.turn.card = saved.turn.deal[0];
+  delete saved.turn.deal;
+  delete saved.recentCards;
+  await store.set(key, saved);
+  view = await getRoom(guest);
+  assert.equal(view.turn.cards.length, 1, "a legacy single card");
+  assert.equal(view.turn.cardLabel, view.turn.cards[0].label);
+  assert.doesNotMatch(view.turn.cardLabel, / or /);
+
+  const finished = await legacyGame(2);
+  clock += 15_000 * 24 + 15_000 * 6;
+  view = await getRoom(finished[1]);
+  assert.equal(view.status, "ended");
+  assert.equal(view.turn.card, null);
+  assert.equal(view.turn.cardLabel, null);
 });
 
 test("a legacy room with a single turn.card keeps working", async () => {
