@@ -5,7 +5,7 @@ import type { Redis } from "@upstash/redis";
 import { POST as roomPost, GET as roomGet } from "@/app/api/room/route";
 import { POST as guessPost } from "@/app/api/guess/route";
 import { GET as logGet } from "@/app/api/room/log/route";
-import { setRedisForTests } from "@/lib/redis";
+import { LOG_TTL_SECONDS, setRedisForTests } from "@/lib/redis";
 import { LOG_INDEX_KEY, logIdOf, logKey, parseGameLog, queueLog, buildWrongEvent, setLogTimeoutForTests, type GameLog } from "@/lib/game-log";
 import { commitTurnRoom, loadTurnRoom, setTurnRngForTests } from "@/lib/turn-room";
 import { allCodes, cardFits, fittingCodes, cardLabel, type Card } from "@/lib/turn-rules";
@@ -170,6 +170,58 @@ test("a claim writes exactly one hset holding one turn event", async () => {
   assert.equal(event.claim!.fit, body.fit);
   assert.equal(event.claim!.both, body.both);
   assert.deepEqual(event.claim!.hit, cards.flatMap((card, i) => (cardFits(card, code) ? [i] : [])));
+});
+
+test("a turn flush after a failed start write still sets the TTL", async () => {
+  const errors = mock.method(console, "error", () => {});
+  const realPipeline = store.pipeline.bind(store);
+  let startFailed = false;
+  store.pipeline = () => {
+    // Only the start write's pipeline fails; every later pipeline is real.
+    if (!startFailed) { startFailed = true; throw new Error("redis down"); }
+    return realPipeline();
+  };
+  const [host] = await turnsGame();
+  const logId = await logIdFor(host);
+  assert.equal(await store.hgetall(logKey(logId)), null, "the start write failed: no hash yet");
+  assert.equal(store.ttlOf(logKey(logId)), undefined);
+  assert.equal(errors.mock.callCount(), 1);
+
+  const view = await getRoom(host);
+  assert.equal((await claim(host, pickFitting(view))).status, 200, "turn 0 (n % 5 === 0) heals");
+  assert.equal(store.ttlOf(logKey(logId)), LOG_TTL_SECONDS);
+  assert.equal(logWrites().find((write) => write.cmd === "expire")!.option, "NX");
+  assert.equal((await logOf(host)).turns.length, 1);
+});
+
+test("a turn flush after a failed start write also adds the game to the index", async () => {
+  mock.method(console, "error", () => {});
+  const realPipeline = store.pipeline.bind(store);
+  let startFailed = false;
+  store.pipeline = () => {
+    if (!startFailed) { startFailed = true; throw new Error("redis down"); }
+    return realPipeline();
+  };
+  const [host] = await turnsGame();
+  const logId = await logIdFor(host);
+  assert.deepEqual(await store.zrange(LOG_INDEX_KEY, 0, -1), []);
+  clearWrites();
+  assert.equal((await claim(host, pickFitting(await getRoom(host)))).status, 200);
+  assert.deepEqual(await store.zrange(LOG_INDEX_KEY, 0, -1), [logId]);
+  assert.equal(logWrites().find((write) => write.cmd === "zadd")!.option, "NX");
+});
+
+test("flushes that do not hit n % 5 add no expire", async () => {
+  const sessions = await turnsGame();
+  const [host] = sessions;
+  assert.equal((await claim(host, pickFitting(await getRoom(host)))).status, 200, "turn 0 heals");
+  clearWrites();
+  clock += 1_000;
+  const view = await getRoom(host);
+  assert.equal(view.turn.number, 1);
+  assert.equal((await claim(whoseTurn(view, sessions), pickFitting(view))).status, 200);
+  assert.deepEqual(logWrites().map((write) => write.cmd), ["hset"]);
+  assert.deepEqual(hsets()[0].fields, ["t:0001"]);
 });
 
 test("pass and timeout are logged with their own outcome and time", async () => {

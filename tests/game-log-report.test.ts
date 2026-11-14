@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { GameLog, TurnLogEvent, WrongGuessEvent } from "@/lib/game-log";
+import type { GameLog, LogCard, TurnLogEvent, WrongGuessEvent } from "@/lib/game-log";
 import { aggregateGames, COMEBACK_POINTS, formatReport, toJsonLines } from "@/lib/game-log-report";
 
 const START_AT = 1_800_000_000_000;
@@ -290,4 +290,92 @@ test("formatReport shows the denominators next to the rates", () => {
   assert.match(text, /flag\s+3\s+2\s+1\s+0\s+33%/, "flag: shown 3, claimed 2, passed 1, timed out 0, miss 33%");
   assert.match(text, /Margin of victory over 1 finished game:/);
   assert.equal(/continent\s+10s\s+0/.test(text), false, "kinds with no claims are not listed by turn length");
+});
+
+test("two players with the same name stay separate in round totals and final totals", () => {
+  const game = fixtureGame();
+  game.start = { ...game.start!, players: [{ id: "pa", name: "Sam", host: true }, { id: "pb", name: "Sam", host: false }] };
+  const row = aggregateGames([game]).perGame[0];
+  assert.deepEqual(Object.keys(row.roundTotals[0].totals).sort(), ["Sam #1", "Sam #2"]);
+  assert.deepEqual(row.roundTotals[0].totals, { "Sam #1": 3, "Sam #2": 0 });
+  assert.deepEqual(Object.keys(row.finalTotals).sort(), ["Sam #1", "Sam #2"]);
+  assert.deepEqual(row.finalTotals, { "Sam #1": 3, "Sam #2": 4 });
+  assert.deepEqual(row.winners, ["Sam #2"]);
+});
+
+test("control characters in player names never reach the text report", () => {
+  const game = fixtureGame();
+  game.start = { ...game.start!, players: [{ id: "pa", name: "\u001b[31mRED\nFAKE", host: true }, { id: "pb", name: "Bo", host: false }] };
+  const text = formatReport(aggregateGames([game]));
+  assert.equal(text.includes("\u001b"), false, "no escape character");
+  assert.equal(text.split("\n").some((line) => line.startsWith("FAKE")), false, "no forged line");
+  assert.ok(text.includes("[31mRED FAKE 3 / Bo 0"), "the name is kept, with the controls turned into spaces");
+});
+
+test("host-ended games are excluded from margin, sudden-death share and duration", () => {
+  const natural = fixtureGame();
+  natural.end = { ...natural.end!, scores: { pa: { points: 1, bonus: 0, total: 1, territory: 0 }, pb: { points: 3, bonus: 1, total: 4, territory: 0 } } };
+  const ended = fixtureGame();
+  ended.logId = "BBBBBB-1800000000001";
+  ended.start = { ...ended.start!, logId: ended.logId, room: "BBBBBB", startedAt: START_AT + 1 };
+  // Margin 1 and no sudden death: if it were counted, the sudden share would be 1 of 2 and the margin mean would change.
+  ended.end = { ...ended.end!, reason: "host_ended", suddenRounds: 0, durationMs: 9_000 };
+  const report = aggregateGames([natural, ended]);
+  assert.equal(report.finishedGames, 1);
+  assert.equal(report.hostEndedGames, 1);
+  assert.equal(report.scoring.finishedWithMargin, 1);
+  assert.equal(report.scoring.meanMargin, 3);
+  assert.equal(report.sudden.share, 1, "one finished game, and it was sudden death");
+  assert.deepEqual(report.ends.meanDurationMsBySeconds, { "10": 100_000 });
+  assert.deepEqual(report.ends.byReason, { turns_played: 1, host_ended: 1 }, "the ends table still lists every game");
+  const text = formatReport(report);
+  assert.ok(text.includes("2 games: 1 finished, 1 ended by the host, 0 unfinished"));
+});
+
+test("pairs with fewer than 10 turns are hidden and counted", () => {
+  const card = (kind: LogCard["kind"]): LogCard => ({ kind, label: kind, fit: 5 });
+  const turns = [
+    ...Array.from({ length: 12 }, (_, n) => turn(n, { deal: [card("flag"), card("letter")], outcome: "pass" })),
+    ...Array.from({ length: 2 }, (_, k) => turn(12 + k, { deal: [card("continent"), card("neighbours")], outcome: "timeout" })),
+  ];
+  const report = aggregateGames([withTurns(fixtureGame(), turns)]);
+  assert.equal(report.pairs.length, 2, "the data keeps every pair");
+  const text = formatReport(report);
+  assert.ok(text.includes("flag+letter"));
+  assert.equal(text.includes("continent+neighbours"), false);
+  assert.ok(text.includes("1 further pair"));
+});
+
+test("a pair's both-rate prints as - with fewer than 5 claims", () => {
+  const card = (kind: LogCard["kind"]): LogCard => ({ kind, label: kind, fit: 5 });
+  const claim = { code: "XX", points: 1, fit: 2, both: true, hit: [0, 1] };
+  const turns = Array.from({ length: 12 }, (_, n) => turn(n, {
+    deal: [card("flag"), card("letter")],
+    outcome: n < 2 ? "claim" : "pass",
+    claim: n < 2 ? claim : undefined,
+  }));
+  const text = formatReport(aggregateGames([withTurns(fixtureGame(), turns)]));
+  assert.match(text, /flag\+letter\s+12\s+2\s+2\s+0\s+10\s+-\s/, "2 claims, both rate shown as -");
+  const row = text.split("\n").find((line) => line.startsWith("flag+letter"));
+  assert.ok(row, "the pair row is printed");
+  assert.equal(row.includes("%"), false, "no percentage on that row");
+});
+
+test("the answer-time and score sections carry the small-sample note", () => {
+  const text = formatReport(aggregateGames([fixtureGame()]));
+  const note = "Based on 1 games; treat anything under about 30 games as anecdotal.";
+  assert.equal(text.split(note).length - 1, 2, "once under section 3 and once under section 4");
+});
+
+test("section 4 lists only the 20 most recent games", () => {
+  const games = Array.from({ length: 23 }, (_, i) => {
+    const game = fixtureGame();
+    const logId = `GAME${String(i).padStart(2, "0")}-${START_AT + i}`;
+    return { ...game, logId, start: { ...game.start!, logId, room: logId.slice(0, 6), startedAt: START_AT + i } };
+  });
+  const text = formatReport(aggregateGames(games));
+  const section4 = text.split("4. Scores by round and sudden death")[1].split("5. Games")[0];
+  assert.equal(section4.includes("GAME00-"), false, "the oldest is not listed");
+  assert.ok(section4.includes("GAME22-"), "the newest is listed");
+  assert.ok(section4.includes("... and 3 older games"));
 });

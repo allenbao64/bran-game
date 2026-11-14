@@ -213,12 +213,13 @@ test("flushQueuedLog writes one hset with every queued field and nothing when th
   await flushQueuedLog(redis, owner, "ABC234-1800000000000");
   assert.equal(calls.length, 0);
 
-  queueLog(owner, buildTurnEvent({ turn: turnOf({ number: 0 }), deal: null, playerId: "a", outcome: "pass", at: 1_500, unclaimed: [] }));
-  queueLog(owner, buildTurnEvent({ turn: turnOf({ number: 1 }), deal: null, playerId: "b", outcome: "timeout", at: 16_000, unclaimed: [] }));
+  // Turn numbers 1 and 2: turn 0 (n % 5 === 0) would also add the expire NX heal, which has its own test.
+  queueLog(owner, buildTurnEvent({ turn: turnOf({ number: 1 }), deal: null, playerId: "a", outcome: "pass", at: 1_500, unclaimed: [] }));
+  queueLog(owner, buildTurnEvent({ turn: turnOf({ number: 2 }), deal: null, playerId: "b", outcome: "timeout", at: 16_000, unclaimed: [] }));
   await flushQueuedLog(redis, owner, "ABC234-1800000000000");
   assert.deepEqual(calls.map((c) => c.cmd), ["hset"]);
   assert.equal(calls[0].args![0], key);
-  assert.deepEqual(Object.keys(calls[0].args![1] as object), ["t:0000", "t:0001"]);
+  assert.deepEqual(Object.keys(calls[0].args![1] as object), ["t:0001", "t:0002"]);
 
   const endOwner = {};
   const { calls: endCalls, redis: endRedis } = fakeRedis();

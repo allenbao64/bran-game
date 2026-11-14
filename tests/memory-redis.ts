@@ -22,7 +22,7 @@ export class MemoryRedis {
   private zsets = new Map<string, Map<string, number>>();
   private ttls = new Map<string, number>();
   /** Every write the game logs make, in order (mirrors what the real commands would do). */
-  readonly writes: { cmd: "hset" | "expire" | "zadd" | "zremrangebyscore"; key: string; fields?: string[] }[] = [];
+  readonly writes: { cmd: "hset" | "expire" | "zadd" | "zremrangebyscore"; key: string; fields?: string[]; option?: string }[] = [];
 
   async set(key: string, value: unknown, options?: { nx?: boolean }) {
     if (options?.nx && this.values.has(key)) return null;
@@ -65,11 +65,12 @@ export class MemoryRedis {
     return added;
   }
 
-  /** Like Redis EXPIRE: 1 and the TTL is recorded when the key exists, 0 and nothing recorded otherwise. */
-  async expire(key: string, seconds: number) {
-    this.writes.push({ cmd: "expire", key });
+  /** Like Redis EXPIRE: 1 and the TTL is recorded when the key exists, 0 and nothing recorded otherwise. With "NX" (Redis 7): the TTL is set only when the key has none; 0 when it has one or the key is missing. */
+  async expire(key: string, seconds: number, option?: string) {
+    this.writes.push({ cmd: "expire", key, option });
     const exists = this.values.has(key) || this.hashes.has(key) || this.zsets.has(key);
     if (!exists) return 0;
+    if (option === "NX" && this.ttls.has(key)) return 0;
     this.ttls.set(key, seconds);
     return 1;
   }
@@ -78,12 +79,16 @@ export class MemoryRedis {
     return this.ttls.get(key);
   }
 
-  async zadd(key: string, { score, member }: { score: number; member: string }) {
+  /** Like Redis ZADD: `zadd(key, {score, member})` or `zadd(key, {nx: true}, {score, member})`. With NX an existing member keeps its score and nothing is written (returns 0). */
+  async zadd(key: string, options: { nx?: boolean } | { score: number; member: string }, scoreMember?: { score: number; member: string }) {
+    const nx = !("member" in options) && options.nx === true;
+    const { score, member } = ("member" in options ? options : scoreMember!) as { score: number; member: string };
     const set = this.zsets.get(key) ?? new Map<string, number>();
     const isNew = !set.has(member);
+    this.writes.push({ cmd: "zadd", key, option: nx ? "NX" : undefined });
+    if (nx && !isNew) return 0;
     set.set(member, score);
     this.zsets.set(key, set);
-    this.writes.push({ cmd: "zadd", key });
     return isNew ? 1 : 0;
   }
 
@@ -117,8 +122,11 @@ export class MemoryRedis {
     const queued: (() => Promise<unknown>)[] = [];
     const chain = {
       hset: (key: string, kv: Record<string, unknown>) => { queued.push(() => this.hset(key, kv)); return chain; },
-      expire: (key: string, seconds: number) => { queued.push(() => this.expire(key, seconds)); return chain; },
-      zadd: (key: string, member: { score: number; member: string }) => { queued.push(() => this.zadd(key, member)); return chain; },
+      expire: (key: string, seconds: number, option?: string) => { queued.push(() => this.expire(key, seconds, option)); return chain; },
+      zadd: (key: string, options: { nx?: boolean } | { score: number; member: string }, scoreMember?: { score: number; member: string }) => {
+        queued.push(() => this.zadd(key, options, scoreMember));
+        return chain;
+      },
       zremrangebyscore: (key: string, min: number | string, max: number | string) => { queued.push(() => this.zremrangebyscore(key, min, max)); return chain; },
       exec: async () => {
         const results: unknown[] = [];

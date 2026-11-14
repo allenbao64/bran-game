@@ -60,7 +60,26 @@ async function main() {
   }
 }
 
+/** Host of the Redis URL only (never the token). */
+function redisHost(): string {
+  try {
+    return new URL(process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL ?? "").host;
+  } catch {
+    return "the configured URL";
+  }
+}
+
+/** The app's own setup message and the bare fetch error are rewritten for someone running this script. */
+function messageFor(cause: unknown): string {
+  if (!(cause instanceof Error)) return "The game log report failed.";
+  if (cause.message.startsWith("Connect the Upstash")) {
+    return "Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (or KV_REST_API_URL / KV_REST_API_TOKEN), for example with node --env-file=.env.local.";
+  }
+  if (cause.message === "fetch failed") return `Could not reach Redis at ${redisHost()}.`;
+  return cause.message;
+}
+
 main().catch((cause: unknown) => {
-  console.error(cause instanceof Error ? cause.message : "The game log report failed.");
+  console.error(messageFor(cause));
   process.exit(1);
 });

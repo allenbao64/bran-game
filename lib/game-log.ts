@@ -221,7 +221,8 @@ async function withTimeout(work: PromiseLike<unknown>): Promise<void> {
 // a -> b, so their turn events partition the turns with no overlap and no hole. Wrong guesses use their own fields, and
 // turn events use t:<n>, so a duplicate write overwrites instead of appending. A crash between the CAS and this write
 // loses that turn's event; the report counts such gaps.
-/** Writes every queued record of `owner` with ONE hset (plus an expire in a pipeline when an "end" record is among them). No-op when nothing is queued or logging is off. */
+/** Writes every queued record of `owner` with ONE hset. An "end" record among them adds a plain expire (pipeline). A turn or wrong record with n % 5 === 0 ("heal") adds
+ * expire NX and zadd NX of the index in the same pipeline, so a game whose start write failed gets its TTL and its index entry on a later flush. Other flushes send only the hset. No-op when nothing is queued or logging is off. */
 export async function flushQueuedLog(redis: Redis, owner: object, logId: string): Promise<void> {
   if (!isGameLoggingEnabled()) return;
   const records = takeQueued(owner);
@@ -229,9 +230,14 @@ export async function flushQueuedLog(redis: Redis, owner: object, logId: string)
   try {
     const key = logKey(logId);
     const fields = Object.fromEntries(records.map((record) => [fieldOf(record), record]));
-    const work = records.some((record) => record.t === "end")
+    const hasEnd = records.some((record) => record.t === "end");
+    const heal = records.some((record) => (record.t === "turn" || record.t === "wrong") && record.n % 5 === 0);
+    const startedAt = Number(logId.slice(logId.lastIndexOf("-") + 1));
+    const work = hasEnd
       ? redis.pipeline().hset(key, fields).expire(key, LOG_TTL_SECONDS).exec()
-      : redis.hset(key, fields);
+      : heal
+        ? redis.pipeline().hset(key, fields).expire(key, LOG_TTL_SECONDS, "NX").zadd(LOG_INDEX_KEY, { nx: true }, { score: startedAt, member: logId }).exec()
+        : redis.hset(key, fields);
     await withTimeout(work);
   } catch (cause) {
     console.error("Game log write failed:", cause);

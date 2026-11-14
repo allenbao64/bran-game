@@ -36,7 +36,7 @@ export type GameRow = {
   gaps: number;
 };
 export type LogReport = {
-  games: number; finishedGames: number; unfinishedGames: number; gamesWithGaps: number; badFields: number;
+  games: number; finishedGames: number; hostEndedGames: number; unfinishedGames: number; gamesWithGaps: number; badFields: number;
   turns: { total: number; seen: number; unseen: number; claimed: number; passed: number; timedOut: number };
   kinds: KindRow[];
   pairs: PairRow[];
@@ -90,8 +90,26 @@ type Analysed = {
   row: GameRow;
 };
 
+/** Control characters (C0, DEL, C1) become spaces, the name is trimmed, and an empty name falls back to the id. Names that still occur more than once in the game get " #1", " #2", ... in turn order, so two players called "Sam" stay separate. */
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/g;
+function displayNames(game: GameLog): Map<string, string> {
+  const cleaned = (game.start?.players ?? []).map((player) => ({
+    id: player.id,
+    name: String(player.name ?? "").replace(CONTROL_CHARACTERS, " ").trim() || player.id,
+  }));
+  const counts = new Map<string, number>();
+  for (const player of cleaned) counts.set(player.name, (counts.get(player.name) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return new Map(cleaned.map((player) => {
+    if ((counts.get(player.name) ?? 0) < 2) return [player.id, player.name];
+    const index = (seen.get(player.name) ?? 0) + 1;
+    seen.set(player.name, index);
+    return [player.id, `${player.name} #${index}`];
+  }));
+}
+
 function analyse(game: GameLog): Analysed {
-  const names = new Map<string, string>((game.start?.players ?? []).map((player) => [player.id, player.name]));
+  const names = displayNames(game);
   const nameOf = (id: string) => names.get(id) ?? id;
   const byName = (totals: Record<string, number>) => Object.fromEntries(Object.entries(totals).map(([id, total]) => [nameOf(id), total]));
   const rounds = game.turns
@@ -304,16 +322,19 @@ export function aggregateGames(games: GameLog[]): LogReport {
     kind: entry.kind, turnSeconds: entry.turnSeconds, claimMs: spread(entry.ms),
   })).sort((a, b) => byCompare(a.kind, b.kind) || (a.turnSeconds === null ? 1 : b.turnSeconds === null ? -1 : a.turnSeconds - b.turnSeconds));
 
-  // 4. Ends, sudden death and scores
+  // 4. Ends, sudden death and scores. "finished" means the game was played out (turns_played or board_exhausted); games the host ended early are counted apart and left out of every balance statistic.
   const rows = analysed.map((entry) => entry.row);
-  const finished = rows.filter((row) => row.endReason !== "unfinished");
+  const finished = rows.filter((row) => row.endReason === "turns_played" || row.endReason === "board_exhausted");
+  const hostEndedGames = rows.filter((row) => row.endReason === "host_ended").length;
   const byReason: Record<string, number> = {};
   const byPlayers: Record<string, number> = {};
   const durationsBySeconds = new Map<string, number[]>();
   for (const row of rows) {
     byReason[row.endReason] = (byReason[row.endReason] ?? 0) + 1;
     if (row.players !== null) byPlayers[String(row.players)] = (byPlayers[String(row.players)] ?? 0) + 1;
-    if (row.endReason !== "unfinished" && row.durationMs !== null && row.turnSeconds !== null) {
+  }
+  for (const row of finished) {
+    if (row.durationMs !== null && row.turnSeconds !== null) {
       const key = String(row.turnSeconds);
       durationsBySeconds.set(key, [...(durationsBySeconds.get(key) ?? []), row.durationMs]);
     }
@@ -326,12 +347,13 @@ export function aggregateGames(games: GameLog[]): LogReport {
   for (const row of suddenRows) byRounds[String(row.suddenRounds)] = (byRounds[String(row.suddenRounds)] ?? 0) + 1;
 
   const withRounds = rows.filter((row) => row.roundTotals.length > 0);
-  const margins = rows.map((row) => row.margin).filter((margin): margin is number => margin !== null);
+  const margins = finished.map((row) => row.margin).filter((margin): margin is number => margin !== null);
 
   return {
     games: rows.length,
     finishedGames: finished.length,
-    unfinishedGames: rows.length - finished.length,
+    hostEndedGames,
+    unfinishedGames: rows.length - finished.length - hostEndedGames,
     gamesWithGaps: rows.filter((row) => row.gaps > 0).length,
     badFields: games.reduce((sum, game) => sum + game.badFields, 0),
     turns: turnsTotal,
@@ -350,7 +372,7 @@ export function aggregateGames(games: GameLog[]): LogReport {
     },
     scoring: {
       meanLeadChanges: mean(withRounds.map((row) => row.leadChanges)),
-      comebacks: rows.filter((row) => row.comeback).length,
+      comebacks: finished.filter((row) => row.comeback).length,
       finishedWithMargin: margins.length,
       meanMargin: mean(margins),
       medianMargin: median(margins),
@@ -365,6 +387,12 @@ const pct = (value: number | null) => (value === null ? "-" : `${Math.round(valu
 const secs = (ms: number | null) => (ms === null ? "-" : `${(ms / 1000).toFixed(1)}s`);
 const num = (value: number | null, digits = 0) => (value === null ? "-" : value.toFixed(digits));
 const count = (value: number, noun: string) => `${value} ${noun}${value === 1 ? "" : "s"}`;
+
+/** Small-sample guards: pairs with fewer turns are hidden from the text report (still in the JSON), a both-rate needs this many claims, and the answer-time and card-pair noise note names the game count. */
+const PAIR_MIN_TURNS = 10;
+const RATE_MIN_CLAIMS = 5;
+const RECENT_GAMES = 20;
+const NOISE_NOTE = (games: number) => `Based on ${games} games; treat anything under about 30 games as anecdotal.`;
 
 /** Left-aligns the first column and right-aligns the rest, each padded to its widest cell. */
 function table(rows: string[][]): string {
@@ -383,12 +411,12 @@ export function formatReport(report: LogReport): string {
   out.push("Turn-based game log report", "");
 
   out.push(sectionTitle("Games"));
-  out.push(`${count(report.games, "game")}: ${report.finishedGames} finished, ${report.unfinishedGames} unfinished, ${report.gamesWithGaps} with gaps, ${report.badFields} unreadable fields`);
+  out.push(`${count(report.games, "game")}: ${report.finishedGames} finished, ${report.hostEndedGames} ended by the host, ${report.unfinishedGames} unfinished, ${report.gamesWithGaps} with gaps, ${report.badFields} unreadable fields`);
   out.push(`Turns: ${report.turns.total} logged, ${report.turns.seen} shown to players, ${report.turns.unseen} never shown (timeout catch-ups)`);
   out.push(`Outcomes of all turns: ${report.turns.claimed} claimed, ${report.turns.passed} passed, ${report.turns.timedOut} timed out`, "");
 
   out.push(sectionTitle("1. Miss rate by card kind"));
-  out.push("Miss = passed or timed out. Only turns that showed the card are counted. Rates on a few turns are noisy: read them with the counts.");
+  out.push("Miss = passed or timed out. Only turns that showed the card are counted. Rates on a few turns are noisy: read them with the counts. Passes and timeouts include turns of players who left the game.");
   if (report.kinds.length === 0) out.push("No shown turns yet.");
   else {
     out.push(table([
@@ -403,17 +431,24 @@ export function formatReport(report: LogReport): string {
 
   out.push(sectionTitle("2. Both cards vs one card"));
   out.push(`Claims on two-card deals: ${report.both.twoCardClaims}. Both cards: ${report.both.both} (${pct(report.both.bothRate)}). One card: ${report.both.one}.`);
-  if (report.pairs.length) {
+  const shownPairs = report.pairs.filter((row) => row.turns >= PAIR_MIN_TURNS);
+  const hiddenPairs = report.pairs.length - shownPairs.length;
+  if (shownPairs.length) {
     out.push(table([
       ["card pair", "turns", "claims", "both", "one", "misses", "both rate", "avg fit (both)"],
-      ...report.pairs.map((row) => [
-        row.pair, String(row.turns), String(row.claims), String(row.both), String(row.one), String(row.misses), pct(row.bothRate), num(row.avgFitBoth, 1),
+      ...shownPairs.map((row) => [
+        row.pair, String(row.turns), String(row.claims), String(row.both), String(row.one), String(row.misses),
+        pct(row.claims >= RATE_MIN_CLAIMS ? row.bothRate : null), num(row.avgFitBoth, 1),
       ]),
     ]));
+  }
+  if (hiddenPairs > 0) {
+    out.push(`${hiddenPairs} further ${hiddenPairs === 1 ? "pair has" : "pairs have"} fewer than ${PAIR_MIN_TURNS} turns and ${hiddenPairs === 1 ? "is" : "are"} hidden.`);
   }
   out.push("");
 
   out.push(sectionTitle("3. Answer time"));
+  out.push(NOISE_NOTE(report.finishedGames));
   out.push(table([
     ["turn length", "games", "turns", "claims", "median claim", "mean claim", "p90 claim", "median wrong", "miss rate"],
     ...report.bySeconds.map((row) => [
@@ -433,14 +468,17 @@ export function formatReport(report: LogReport): string {
   out.push("", SECONDS_NOTE, "");
 
   out.push(sectionTitle("4. Scores by round and sudden death"));
+  out.push(NOISE_NOTE(report.finishedGames));
   out.push(`Sudden death: ${report.sudden.games} of ${report.finishedGames} finished games (${pct(report.sudden.share)}). Decided: ${report.sudden.decided}. Shared win: ${report.sudden.sharedWin}.`);
   out.push(`Margin of victory over ${count(report.scoring.finishedWithMargin, "finished game")}: mean ${num(report.scoring.meanMargin, 1)}, median ${num(report.scoring.medianMargin, 1)}. Comebacks (trailed by ${COMEBACK_POINTS}+): ${report.scoring.comebacks}. Mean lead changes: ${num(report.scoring.meanLeadChanges, 1)}.`);
-  for (const row of report.perGame) {
+  const recentGames = report.perGame.slice(-RECENT_GAMES);
+  for (const row of recentGames) {
     const rounds = row.roundTotals.length
       ? row.roundTotals.map((round) => `R${round.round}${round.sudden ? " sudden" : ""} ${Object.entries(round.totals).map(([name, total]) => `${name} ${total}`).join(" / ")}`).join("; ")
       : "no round totals";
     out.push(`  ${row.logId}: ${rounds}`);
   }
+  if (report.perGame.length > recentGames.length) out.push(`  ... and ${count(report.perGame.length - recentGames.length, "older game")}`);
   out.push("");
 
   out.push(sectionTitle("5. Games"));

@@ -61,7 +61,7 @@ Sources: World Bank API (latest non-empty value), countries-and-timezones (disti
 
 Every finished turn of a turn-based game is logged: one record per turn (the cards shown, the outcome, the time taken, and for a claim which cards the country fit), one per wrong guess, and a start and an end record for each game. Start records carry player ids and display names only; end records carry scores. No player tokens, IP addresses or user agents are ever stored. Live and Empire rooms are not logged.
 
-Where: one Redis hash per game, `bran:glog:<ROOM>-<startedAt>`, plus the sorted set `bran:glog:index` that lists the games. Logs are kept for 30 days. The room itself still expires after 24 hours, so the read API below works for a game only while its room exists.
+Where: one Redis hash per game, `bran:glog:<ROOM>-<startedAt>`, plus the sorted set `bran:glog:index` that lists the games. Logs are kept for 30 days. The room itself still expires after 24 hours, so the read API below works for a game only while its room exists. Games already running when logging is first deployed have no start record and are not in the report.
 
 Kill switch: set `GAME_LOGGING=off` (or `0`, `false`, `no`) to stop writing logs. It is read on every request, so on Vercel a change takes effect with the next deployment, like any environment variable change.
 
