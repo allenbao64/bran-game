@@ -92,19 +92,37 @@ type Analysed = {
 
 /** Control characters (C0, DEL, C1) become spaces, the name is trimmed, and an empty name falls back to the id. Names that still occur more than once in the game get " #1", " #2", ... in turn order, so two players called "Sam" stay separate. */
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/g;
+/** A game with no start record has no names, so its players are numbered "player 1", "player 2", ... in order of first appearance: the turn pids, then the round total keys, then the end scores. */
+function placeholderNames(game: GameLog): Map<string, string> {
+  const ids = new Set<string>();
+  for (const turn of game.turns) ids.add(turn.pid);
+  for (const turn of game.turns) for (const id of Object.keys(turn.totals ?? {})) ids.add(id);
+  for (const id of Object.keys(game.end?.scores ?? {})) ids.add(id);
+  return new Map([...ids].map((id, index) => [id, `player ${index + 1}`]));
+}
+
 function displayNames(game: GameLog): Map<string, string> {
-  const cleaned = (game.start?.players ?? []).map((player) => ({
+  if (!game.start) return placeholderNames(game);
+  const cleaned = (game.start.players ?? []).map((player) => ({
     id: player.id,
     name: String(player.name ?? "").replace(CONTROL_CHARACTERS, " ").trim() || player.id,
   }));
   const counts = new Map<string, number>();
   for (const player of cleaned) counts.set(player.name, (counts.get(player.name) ?? 0) + 1);
-  const seen = new Map<string, number>();
+  // Names that are unique keep their plain name, so a suffixed candidate never takes one of them.
+  const used = new Set(cleaned.filter((player) => (counts.get(player.name) ?? 0) < 2).map((player) => player.name));
+  const lastIndex = new Map<string, number>();
   return new Map(cleaned.map((player) => {
     if ((counts.get(player.name) ?? 0) < 2) return [player.id, player.name];
-    const index = (seen.get(player.name) ?? 0) + 1;
-    seen.set(player.name, index);
-    return [player.id, `${player.name} #${index}`];
+    let index = lastIndex.get(player.name) ?? 0;
+    let candidate: string;
+    do {
+      index++;
+      candidate = `${player.name} #${index}`;
+    } while (used.has(candidate));
+    lastIndex.set(player.name, index);
+    used.add(candidate);
+    return [player.id, candidate];
   }));
 }
 
@@ -118,7 +136,9 @@ function analyse(game: GameLog): Analysed {
 
   const maxN = game.turns.reduce((max, turn) => Math.max(max, turn.n), -1);
   const distinct = new Set(game.turns.map((turn) => turn.n)).size;
-  const gaps = game.turns.length ? maxN + 1 - distinct : 0;
+  // Without a start record the first logged turn is the baseline: turns before it are not known to be missing.
+  const firstN = game.start ? 0 : game.turns.reduce((min, turn) => Math.min(min, turn.n), Infinity);
+  const gaps = game.turns.length ? maxN + 1 - firstN - distinct : 0;
 
   const leaders = rounds.map((round) => leaderOf(round.totals));
   let leadChanges = 0;
@@ -346,7 +366,6 @@ export function aggregateGames(games: GameLog[]): LogReport {
   const byRounds: Record<string, number> = {};
   for (const row of suddenRows) byRounds[String(row.suddenRounds)] = (byRounds[String(row.suddenRounds)] ?? 0) + 1;
 
-  const withRounds = rows.filter((row) => row.roundTotals.length > 0);
   const margins = finished.map((row) => row.margin).filter((margin): margin is number => margin !== null);
 
   return {
@@ -371,7 +390,7 @@ export function aggregateGames(games: GameLog[]): LogReport {
       byRounds,
     },
     scoring: {
-      meanLeadChanges: mean(withRounds.map((row) => row.leadChanges)),
+      meanLeadChanges: mean(finished.filter((row) => row.roundTotals.length > 0).map((row) => row.leadChanges)),
       comebacks: finished.filter((row) => row.comeback).length,
       finishedWithMargin: margins.length,
       meanMargin: mean(margins),
@@ -408,7 +427,12 @@ function sectionTitle(title: string) {
 /** Plain-text report. Deterministic; no NaN, undefined or null text (missing values print as "-"). */
 export function formatReport(report: LogReport): string {
   const out: string[] = [];
-  out.push("Turn-based game log report", "");
+  out.push("Turn-based game log report");
+  const noStart = report.perGame.filter((row) => row.players === null).length;
+  if (noStart > 0) {
+    out.push(`${count(noStart, "game")} ${noStart === 1 ? "has" : "have"} no start record (started before logging or a lost write); ${noStart === 1 ? "its" : "their"} player names and turn length are unknown.`);
+  }
+  out.push("");
 
   out.push(sectionTitle("Games"));
   out.push(`${count(report.games, "game")}: ${report.finishedGames} finished, ${report.hostEndedGames} ended by the host, ${report.unfinishedGames} unfinished, ${report.gamesWithGaps} with gaps, ${report.badFields} unreadable fields`);

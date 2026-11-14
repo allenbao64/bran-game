@@ -186,6 +186,17 @@ test("a comeback is flagged at COMEBACK_POINTS", () => {
   assert.equal(trailing(4).maxWinnerDeficit, 4);
 });
 
+test("mean lead changes ignores unfinished and host-ended games", () => {
+  const finishedGame = fixtureGame();
+  // Leaders by round: pa (round 1), pb (round 2), pa (round 3): two lead changes.
+  finishedGame.turns[3] = { ...finishedGame.turns[3], totals: { pa: 0, pb: 3 } };
+  finishedGame.turns[5] = { ...finishedGame.turns[5], totals: { pa: 5, pb: 4 } };
+  const unfinished = withTurns({ ...fixtureGame(), logId: "CCCCCC-1800000000002", end: null }, fixtureGame().turns.map((t) => (t.totals ? { ...t, totals: { pa: 3, pb: 0 } } : t)));
+  const report = aggregateGames([finishedGame, unfinished]);
+  assert.deepEqual(report.perGame.map((row) => row.leadChanges), [2, 0]);
+  assert.equal(report.scoring.meanLeadChanges, 2);
+});
+
 test("a shared sudden-death win has margin 0 and no deficit", () => {
   const game = fixtureGame();
   game.end = { ...game.end!, winners: ["pa", "pb"] };
@@ -228,6 +239,31 @@ test("games without a start record still count", () => {
   assert.equal(report.perGame[0].players, null);
   assert.equal(report.perGame[0].turnSeconds, null);
   assert.equal(report.games, 1);
+});
+
+/** Turns 8 to 29 from two players, no start record, and a round total on the last turn. */
+function noStartLog(omit?: number): GameLog {
+  const turns = Array.from({ length: 22 }, (_, i) => turn(8 + i, { pid: i % 2 === 0 ? "pa" : "pb", outcome: "pass" }))
+    .map((t) => (t.n === 29 ? { ...t, totals: { pa: 3, pb: 1 } } : t))
+    .filter((t) => t.n !== omit);
+  return { ...fixtureGame(), start: null, turns };
+}
+
+test("a game with no start record has no false gaps and gets placeholder names", () => {
+  const report = aggregateGames([noStartLog()]);
+  const row = report.perGame[0];
+  assert.equal(row.gaps, 0, "turns 0 to 7 are not counted as missing");
+  assert.deepEqual(row.roundTotals[0].totals, { "player 1": 3, "player 2": 1 });
+  assert.deepEqual(Object.keys(row.finalTotals).sort(), ["player 1", "player 2"]);
+  assert.deepEqual(row.winners, ["player 2"]);
+  const text = formatReport(report);
+  assert.ok(text.includes("R1 player 1 3 / player 2 1"), "the placeholder names are printed");
+  assert.ok(text.includes("1 game has no start record (started before logging or a lost write); its player names and turn length are unknown."));
+});
+
+test("a real gap is still counted in a game with no start record", () => {
+  const row = aggregateGames([noStartLog(15)]).perGame[0];
+  assert.equal(row.gaps, 1);
 });
 
 test("two games with different turn lengths group separately", () => {
@@ -301,6 +337,31 @@ test("two players with the same name stay separate in round totals and final tot
   assert.deepEqual(Object.keys(row.finalTotals).sort(), ["Sam #1", "Sam #2"]);
   assert.deepEqual(row.finalTotals, { "Sam #1": 3, "Sam #2": 4 });
   assert.deepEqual(row.winners, ["Sam #2"]);
+});
+
+test("display names stay unique when a real name looks like a suffix", () => {
+  const game = fixtureGame();
+  game.start = {
+    ...game.start!,
+    players: [{ id: "pa", name: "Sam", host: true }, { id: "pb", name: "Sam", host: false }, { id: "pc", name: "Sam #1", host: false }],
+  };
+  game.turns[1] = { ...game.turns[1], totals: { pa: 3, pb: 0, pc: 1 } };
+  game.end = {
+    ...game.end!,
+    winners: ["pc"],
+    scores: {
+      pa: { points: 2, bonus: 1, total: 3, territory: 0 },
+      pb: { points: 3, bonus: 1, total: 4, territory: 0 },
+      pc: { points: 4, bonus: 1, total: 5, territory: 0 },
+    },
+  };
+  const row = aggregateGames([game]).perGame[0];
+  // "Sam #1" is a real name, so the first "Sam" skips to " #2" and the second takes " #3".
+  assert.equal(Object.keys(row.roundTotals[0].totals).length, 3);
+  assert.deepEqual(row.roundTotals[0].totals, { "Sam #2": 3, "Sam #3": 0, "Sam #1": 1 });
+  assert.equal(Object.keys(row.finalTotals).length, 3);
+  assert.deepEqual(row.finalTotals, { "Sam #2": 3, "Sam #3": 4, "Sam #1": 5 });
+  assert.deepEqual(row.winners, ["Sam #1"]);
 });
 
 test("control characters in player names never reach the text report", () => {
