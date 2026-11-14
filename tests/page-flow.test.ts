@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
 import { JSDOM } from "jsdom";
 import React, { act } from "react";
@@ -410,13 +411,15 @@ test("a contender on their turn in sudden death can type", async () => {
 
 test("the claim note names the points after a claim", async () => {
   const posted: Record<string, unknown>[] = [];
+  let view = turnRoom({});
   globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
     if (init?.body) {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       posted.push(body);
+      view = turnRoom({ number: 9, currentPlayerId: "p2" });
       return jsonResponse({ ok: true, claim: { code: "FR", points: 3, fit: 2, cards: 2, both: true, sudden: false } });
     }
-    return jsonResponse(turnRoom({}));
+    return jsonResponse(view);
   }) as typeof fetch;
   const doc = mount(session);
   await settle(0);
@@ -429,6 +432,70 @@ test("the claim note names the points after a claim", async () => {
   await act(async () => { claim.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
   assert.equal(posted.length, 1, "the claim was sent");
   assert.match(doc.querySelector(".claim-note")?.textContent ?? "", /^Both cards: \+3/);
+});
+
+test("the claim note is shown during the other players' turns and gone on your next turn", async () => {
+  let view = turnRoom({});
+  globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.body) {
+      view = turnRoom({ number: 9, currentPlayerId: "p2" });
+      return jsonResponse({ ok: true, claim: { code: "FR", points: 3, fit: 2, cards: 2, both: true, sudden: false } });
+    }
+    return jsonResponse(view);
+  }) as typeof fetch;
+  const doc = mount(session);
+  await settle(0);
+  const answer = doc.querySelector<HTMLInputElement>(".guess-form input")!;
+  answer.id = "answer";
+  answer.focus();
+  setInput(doc, "answer", "France");
+  act(() => { answer.dispatchEvent(new dom.window.KeyboardEvent("keyup", { bubbles: true })); });
+  const claim = [...doc.querySelectorAll<HTMLButtonElement>(".guess-form button")].find((button) => button.textContent === "Claim")!;
+  await act(async () => { claim.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  assert.match(doc.querySelector(".claim-note")?.textContent ?? "", /^Both cards: \+3/, "the note shows during the next player's turn");
+  view = turnRoom({ number: 10, currentPlayerId: "p1" });
+  await settle(1000);
+  assert.equal(doc.querySelector(".claim-note"), null, "the note is gone on your next turn");
+  view = turnRoom({ number: 11, currentPlayerId: "p2" });
+  await settle(1000);
+  assert.equal(doc.querySelector(".claim-note"), null, "the note never comes back on a later round");
+});
+
+test("the results breakdown is placed in the wide grid columns", async () => {
+  const css = readFileSync(`${process.cwd()}/app/globals.css`, "utf8");
+  assert.match(css, /\.board article>\.breakdown\{[^}]*grid-column:2\/4/);
+});
+
+test("the sudden death and double points banners are dark enough for white text", async () => {
+  const css = readFileSync(`${process.cwd()}/app/globals.css`, "utf8");
+  const background = (className: string) => {
+    const match = css.match(new RegExp(`\\.${className}\\{[^}]*background:(#[0-9a-fA-F]{6})`));
+    assert.ok(match, `.${className} sets a hex background`);
+    return match[1];
+  };
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((index) => {
+      const channel = parseInt(hex.slice(index, index + 2), 16) / 255;
+      return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrastWithWhite = (hex: string) => 1.05 / (luminance(hex) + 0.05);
+  for (const className of ["sudden-banner", "double-banner"]) {
+    assert.ok(contrastWithWhite(background(className)) >= 4.5, `.${className} white text contrast is at least 4.5:1`);
+  }
+});
+
+test("ending a turn-based game asks to end the game, not the round", async () => {
+  serve(() => turnRoom({}));
+  const doc = mount(session);
+  await settle(0);
+  const asked: string[] = [];
+  doc.defaultView!.confirm = (message?: string) => { asked.push(message ?? ""); return false; };
+  const endButton = [...doc.querySelectorAll("button")].find((button) => button.textContent?.includes("End game & reveal"));
+  assert.ok(endButton, "the host has an end button in a turn-based game");
+  await act(async () => { endButton!.click(); });
+  assert.deepEqual(asked, ["End the game now and show the results?"]);
 });
 
 test("the feed marks claims that fit both cards", async () => {
