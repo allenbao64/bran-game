@@ -86,7 +86,7 @@ export default function Home() {
   const [entry, setEntry] = useState("");
   const [left, setLeft] = useState(GAME_CATALOG.countries.durationSeconds);
   const [notice, setNotice] = useState("");
-  const [claimNote, setClaimNote] = useState("");
+  const [claimNote, setClaimNote] = useState<{ text: string; turn: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const input = useRef<HTMLInputElement>(null);
@@ -190,7 +190,8 @@ export default function Home() {
   }
 
   async function endRound() {
-    if (!room || busyRef.current || !window.confirm("End the round now and reveal everyone’s answers?")) return;
+    const question = room?.mode === "turns" || room?.mode === "empire" ? "End the game now and show the results?" : "End the round now and reveal everyone’s answers?";
+    if (!room || busyRef.current || !window.confirm(question)) return;
     busyRef.current = true; setBusy(true); setNotice("");
     try {
       await api("/api/room", {
@@ -220,7 +221,7 @@ export default function Home() {
       });
       setEntry("");
       if (room.mode === "turns") {
-        setClaimNote(`${claimFitNote(data.claim?.fit, data.claim?.cards ?? 0, data.claim?.points ?? 0)} ${claimRegionNote(countryClaims, answer.code, playerId)}`.trim());
+        setClaimNote({ text: `${claimFitNote(data.claim?.fit, data.claim?.cards ?? 0, data.claim?.points ?? 0)} ${claimRegionNote(countryClaims, answer.code, playerId)}`.trim(), turn: turn?.number ?? 0 });
         await sync(room.code, room.token);
         return;
       }
@@ -260,7 +261,7 @@ export default function Home() {
 
   function leaveRoom() {
     localStorage.removeItem(ROOM_KEY);
-    setStage("home"); setRoom(null); setTurn(null); setLargestGroups({}); setStartCountries({}); setRecentGuesses([]); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setWinners([]); setPlayers([]); setGuesses([]); setResults([]); setCountryClaims({}); setNotice(""); setClaimNote(""); setEntry("");
+    setStage("home"); setRoom(null); setTurn(null); setLargestGroups({}); setStartCountries({}); setRecentGuesses([]); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setWinners([]); setPlayers([]); setGuesses([]); setResults([]); setCountryClaims({}); setNotice(""); setClaimNote(null); setEntry("");
   }
 
   const ready = Boolean(name.trim());
@@ -270,6 +271,7 @@ export default function Home() {
   const isCountries = activeGame.id === "countries";
   const isTurns = room?.mode === "turns" && isCountries;
   const isEmpire = room?.mode === "empire" && isCountries;
+  const noteText = claimNote && turn && !turn.finished && turn.number > claimNote.turn && turn.number < claimNote.turn + players.length && turn.currentPlayerId !== playerId ? claimNote.text : "";
   const modeLabel = (mode: Mode) => (mode === "turns" ? "Turn-based" : mode === "empire" ? "Empire" : "Live race");
   const modeRules = (mode: Mode) => MODE_RULES[mode];
 
@@ -312,7 +314,7 @@ export default function Home() {
       {players.length === 1 && <p className="waiting">Waiting for another player.</p>}{players.length === 2 && <p className="waiting">A third player can still join.</p>}
       {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length < 2 || busy} onClick={() => void startRound()}>Start</button>}
       <button className="quiet" onClick={leaveRoom}>Leave room</button>{notice && <p className="notice">{notice}</p>}</div>}
-    {stage === "game" && room && isTurns && turn && <TurnsGame turn={turn} scores={scores} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} entry={entry} onEntry={setEntry} notice={notice} busy={busy} onSubmit={submitGuess} onPass={() => void passTurn()} onEnd={() => void endRound()} colorOf={colorOf} largestGroups={largestGroups} claimNote={claimNote} startCountries={startCountries} recentGuesses={recentGuesses}/>}
+    {stage === "game" && room && isTurns && turn && <TurnsGame turn={turn} scores={scores} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} entry={entry} onEntry={setEntry} notice={notice} busy={busy} onSubmit={submitGuess} onPass={() => void passTurn()} onEnd={() => void endRound()} colorOf={colorOf} largestGroups={largestGroups} claimNote={noteText} startCountries={startCountries} recentGuesses={recentGuesses}/>}
     {stage === "game" && room && isTurns && !turn && <p className="lede">Dealing the first card…</p>}
     {stage === "game" && room && isEmpire && empire && <EmpireGame view={empire} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} notice={notice} busy={busy} onAction={empireAction} onNotice={setNotice} onEnd={() => void endRound()} colorOf={colorOf}/>}
     {stage === "game" && room && isEmpire && !empire && <p className="lede">Placing capitals…</p>}
