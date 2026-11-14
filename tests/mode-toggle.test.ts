@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, test } from "node:test";
 import { JSDOM } from "jsdom";
+import { TURN_RULES_LINE } from "@/lib/turn-rules";
 
 // React DOM decides at import time whether the browser supports input events, so
 // this file installs jsdom globals first and imports the page afterwards. That lets
@@ -173,4 +174,25 @@ test("Empire has its own speed picker (Blitz 15 s, Standard 20 s, Relaxed 30 s);
   assert.equal(sent[0].turnSeconds, 30);
   assert.match(doc.body.textContent ?? "", /Empire · 30s turns/);
   assert.match(doc.body.textContent ?? "", /claim, steal or fortify/);
+});
+
+test("the turn-based rules line explains two cards, graded territory and sudden death in the picker and in the lobby", async () => {
+  const TURN_RULES = TURN_RULES_LINE;
+  mount();
+  act(() => button("Turn-based", ".mode-option")!.click());
+  const picked = button("Turn-based", ".mode-option")!.querySelector("small");
+  assert.equal(picked?.textContent, TURN_RULES, "the picker shows the rules line");
+  assert.match(TURN_RULES, /Two cards each turn/);
+  assert.match(TURN_RULES, /sudden death/i);
+  assert.equal(TURN_RULES, "Two cards each turn: fit one for 1 point, both for 3. Last 3 rounds count double. +1 for every 3 linked countries in your biggest group. Own a whole small region for +1 to +4. A tie for first goes to sudden death.", "the line is built from the constants");
+  assert.doesNotMatch(TURN_RULES, /Biggest linked group \+2/);
+  type("name", "Host");
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    code: "ABC234", gameId: "countries", mode: "turns", token: "a".repeat(64), playerId: "p1", status: "waiting", startedAt: null,
+    players: [{ id: "p1", name: "Host", host: true }]
+  }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+  await act(async () => { button("Create room")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+  const lobby = [...doc.querySelectorAll(".lede")].map((paragraph) => paragraph.textContent);
+  assert.ok(lobby.includes(TURN_RULES), "the lobby shows the same rules line");
+  assert.doesNotMatch(doc.body.textContent ?? "", /Biggest linked group \+2/);
 });

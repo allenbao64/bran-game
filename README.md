@@ -49,7 +49,7 @@ Country Sprint uses UN member states, plus the Holy See, Palestine, Taiwan, and 
 
 ## Turn-based cards and country stats
 
-Each turn deals one card that fits between 12 and 60 of the unclaimed countries (the range shrinks as the board empties); wild is a 3% draw. Every player also starts with a free country: not an island, 2+ land neighbours, a different subregion from the other starts. It is a round-0 claim worth 0 points that still counts for territory and region bonuses.
+Each turn deals two different cards, each fitting between 12 and 60 of the unclaimed countries (the range shrinks as the board empties). Pairs are dealt so that at least 2 countries fit both when possible. Fitting one card scores 1 point, both cards 3; the last three rounds count double. Wild is a 3% draw per turn and counts as fitting any country. Your largest linked group scores +1 for every 3 countries. A tie for first after the last round goes to sudden death: only the tied players play, up to 3 rounds at normal points, and they share the win if still tied. Every player also starts with a free country: not an island, 2+ land neighbours, a different subregion from the other starts. It is a round-0 claim worth 0 points that still counts for territory and region bonuses.
 
 Population, GDP, GDP per capita, time zones and flag colours live in the committed file lib/data/country-stats.json. Regenerate it (needs network) with:
 

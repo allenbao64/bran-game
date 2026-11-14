@@ -100,7 +100,8 @@ export async function POST(request: NextRequest) {
               room.startCountries[id] = starts[index]
             end
           end
-          room.recentCards = {turn.card}
+          room.recentCards = {}
+          for _, dealt in ipairs(turn.deal) do table.insert(room.recentCards, dealt) end
           room.recentGuesses = {}
         end
         redis.call('SET', KEYS[1], cjson.encode(room), 'EX', tonumber(ARGV[3]))

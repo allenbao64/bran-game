@@ -4,7 +4,7 @@ import { championByCode } from "@/lib/champions";
 import { overwatchHeroByCode } from "@/lib/overwatch-heroes";
 import { gameConfig } from "@/lib/games";
 import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
-import { applyClaim, isTurnsRoom, runTurnAction } from "@/lib/turn-room";
+import { applyClaim, dealOf, isTurnsRoom, runTurnAction, type ClaimResult } from "@/lib/turn-room";
 
 export const runtime = "nodejs";
 type Player = { id: string; token: string; name: string; host: boolean };
@@ -45,9 +45,18 @@ export async function POST(request: NextRequest) {
     if (gameId === "countries" && isTurnsRoom(room)) {
       // Turn-based claims are validated and written by the compare-and-set engine, not the live-race script.
       const now = Date.now();
-      const outcome = await runTurnAction(redis, key, now, (turnRoom) => applyClaim(turnRoom, player.id, answer.code, now));
+      let result = null as ClaimResult | null;
+      const outcome = await runTurnAction(redis, key, now, (turnRoom) => {
+        // Captured inside the action: runTurnAction may retry it, so each attempt overwrites `result`.
+        const cards = dealOf(turnRoom.turn!).length;
+        const failure = applyClaim(turnRoom, player.id, answer.code, now);
+        if (failure) return failure;
+        const claim = turnRoom.claims!.at(-1)!;
+        result = { code: claim.code, points: claim.points, fit: claim.fit ?? 1, cards, both: cards >= 2 && claim.fit === cards, sudden: Boolean(claim.sudden) };
+        return null;
+      });
       if ("error" in outcome) return NextResponse.json({ error: outcome.error }, { status: outcome.status });
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, claim: result });
     }
     const roundMs = gameConfig(gameId).durationSeconds * 1000;
     if (room.status !== "playing" || room.startedAt === null || Date.now() >= room.startedAt + roundMs) {

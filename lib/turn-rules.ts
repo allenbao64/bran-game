@@ -10,11 +10,24 @@ export const isTurnRounds = (value: unknown): value is number => TURN_ROUND_OPTI
 export const DOUBLE_POINT_ROUNDS = 3;
 export const MIN_FITTING_COUNTRIES = 3;
 export const SMALL_REGION_MAX = 6;
-export const BONUS_POINTS = 2;
+export const CARDS_PER_TURN = 2;
+export const POINTS_ONE_CARD = 1;       // fits exactly one card
+export const POINTS_BOTH_CARDS = 3;     // fits both cards
+export const MIN_BOTH_FIT = 2;          // wanted: >= this many unclaimed countries fit both cards of a deal
+export const PAIR_TRIES = 20;           // bounded attempts to find a pair meeting MIN_BOTH_FIT
+export const TERRITORY_GROUP_SIZE = 3;  // +1 per this many linked countries in your largest group
+export const TERRITORY_POINTS_PER_GROUP = 1;
+export const SUDDEN_DEATH_ROUNDS = 3;
+/** Cards remembered for variety: six deals of two (was six single cards). */
+export const RECENT_CARDS = 12;
 export const MAX_REGION_BONUS = 4;
 /** Region bonus scales with size: 2 countries +1, 3 +2, 4 +3, 5 or 6 +4. */
 export const regionBonusPoints = (size: number) => Math.max(0, Math.min(size - 1, MAX_REGION_BONUS));
 export const MIN_TERRITORY = 3;
+/** The one rules line for turn-based play (mode picker and lobby), built from the constants so tuning them keeps the text right. */
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+export const TURN_RULES_LINE = `Two cards each turn: fit one for ${plural(POINTS_ONE_CARD, "point")}, both for ${POINTS_BOTH_CARDS}. Last ${DOUBLE_POINT_ROUNDS} rounds count double. +${TERRITORY_POINTS_PER_GROUP} for every ${TERRITORY_GROUP_SIZE} linked countries in your biggest group. Own a whole small region for +1 to +${MAX_REGION_BONUS}. A tie for first goes to sudden death.`;
+
 /** Host-selectable turn lengths in seconds (Blitz, Standard, Relaxed). */
 export const TURN_SPEEDS = [
   { id: "blitz", label: "Blitz", seconds: 10 },
@@ -43,7 +56,15 @@ export type Card =
   | { kind: "flag"; colour: FlagColour; has: boolean }
   | { kind: "timezones"; multiple: boolean };
 
-export type Claim = { code: string; playerId: string; points: number; round: number; turn: number; at: number };
+export type Claim = {
+  code: string; playerId: string; points: number; round: number; turn: number; at: number;
+  /** Cards of the deal this country fit (1 or 2). Missing on claims saved before two-card turns and on starts. */
+  fit?: number;
+  /** Played in sudden death. Missing = no. */
+  sudden?: boolean;
+};
+/** The two cards (or one, for legacy rooms and late-game wilds) a turn is played on. */
+export type Deal = Card[];
 export type Bonus = { kind: "region" | "territory"; label: string; points: number };
 export type Score = { points: number; bonuses: Bonus[]; bonusTotal: number; total: number; territory: number };
 
@@ -128,8 +149,6 @@ export const MIN_FIT = 12;
 export const MAX_FIT = 60;
 /** Wild cards are a rare draw. */
 export const WILD_RATE = 0.03;
-/** An identical card is not dealt again within this many deals. */
-export const RECENT_CARDS = 6;
 
 /** The fit band for a board with `unclaimed` countries left: relaxes as the board empties (never below MIN_FITTING_COUNTRIES). */
 export function fitBand(unclaimed: number) {
@@ -181,26 +200,68 @@ const CANDIDATES = {
 } satisfies Record<string, (unclaimed: string[], rng: () => number) => Card[]>;
 export const DEALT_KINDS = Object.keys(CANDIDATES) as (keyof typeof CANDIDATES)[];
 
+type DealOptions = { forbid: ReadonlySet<string>; avoid: ReadonlySet<string>; seen: ReadonlySet<string>; band: { min: number; max: number } };
+
 /**
- * Deals one card. Wild is a rare draw, rolled once and never twice in a row. Otherwise kinds are tried in random
- * order (skipping the previous card's kind and any card in `recent`, newest first) until one has a card that fits
- * between the band's bounds; a repeated kind is the fallback, wild the last resort.
+ * Deals one non-wild card, or null when nothing fits the band. Kinds are tried in random order: kinds in `avoid` last,
+ * kinds in `forbid` never, and a card whose label is in `seen` is skipped.
  */
-export function dealCard(unclaimed: string[], rng: () => number = Math.random, recent: Card[] = []): Card {
-  if (unclaimed.length === 0 || (rng() < WILD_RATE && recent[0]?.kind !== "wild")) return { kind: "wild" };
-  const { min, max } = fitBand(unclaimed.length);
-  const seen = new Set(recent.slice(0, RECENT_CARDS).map(cardLabel));
+function dealOne(unclaimed: string[], rng: () => number, { forbid, avoid, seen, band }: DealOptions): Card | null {
   const kinds = shuffled(DEALT_KINDS, rng);
-  const last = recent[0]?.kind;
-  for (const kind of [...kinds.filter((k) => k !== last), ...kinds.filter((k) => k === last)]) {
+  for (const kind of [...kinds.filter((k) => !avoid.has(k)), ...kinds.filter((k) => avoid.has(k))]) {
+    if (forbid.has(kind)) continue;
     const options = CANDIDATES[kind](unclaimed, rng).filter((card) => {
       if (seen.has(cardLabel(card))) return false;
       const fits = fittingCodes(card, unclaimed).length;
-      return fits >= min && fits <= max;
+      return fits >= band.min && fits <= band.max;
     });
     if (options.length) return pick(options, rng);
   }
-  return { kind: "wild" };
+  return null;
+}
+
+/**
+ * Deals one card. Wild is a rare draw, rolled once and never twice in a row. Otherwise kinds are tried in random
+ * order (the previous card's kind last, recent cards skipped) until one has a card in the fit band; a repeated kind
+ * is the fallback, wild the last resort.
+ */
+export function dealCard(unclaimed: string[], rng: () => number = Math.random, recent: Card[] = []): Card {
+  if (unclaimed.length === 0 || (rng() < WILD_RATE && recent[0]?.kind !== "wild")) return { kind: "wild" };
+  const avoid = new Set(recent[0] ? [recent[0].kind] : []);
+  const seen = new Set(recent.slice(0, RECENT_CARDS).map(cardLabel));
+  return dealOne(unclaimed, rng, { forbid: new Set(), avoid, seen, band: fitBand(unclaimed.length) }) ?? { kind: "wild" };
+}
+
+/**
+ * Deals a turn's cards: CARDS_PER_TURN different kinds, at most one wild, and (when the board allows) a pair where at
+ * least MIN_BOTH_FIT unclaimed countries fit both cards. Kinds of the previous deal are avoided when possible.
+ * Returns one or two cards, never []. Bounded: at most 2 x PAIR_TRIES dealOne calls.
+ */
+export function dealCards(unclaimed: string[], rng: () => number = Math.random, recent: Card[] = []): Deal {
+  if (unclaimed.length === 0) return [{ kind: "wild" }];
+  const band = fitBand(unclaimed.length);
+  const previous = recent.slice(0, CARDS_PER_TURN);
+  const avoid = new Set(previous.map((card) => card.kind));
+  const seen = new Set(recent.slice(0, RECENT_CARDS).map(cardLabel));
+  const withWild = rng() < WILD_RATE && !previous.some((card) => card.kind === "wild");
+  if (withWild) {
+    const card = dealOne(unclaimed, rng, { forbid: new Set(), avoid, seen, band });
+    if (!card) return [{ kind: "wild" }];
+    return rng() < 0.5 ? [card, { kind: "wild" }] : [{ kind: "wild" }, card];
+  }
+  let fallbackPair: Deal | null = null;
+  let single: Card | null = null;
+  for (let attempt = 0; attempt < PAIR_TRIES; attempt++) {
+    const first = dealOne(unclaimed, rng, { forbid: new Set(), avoid, seen, band });
+    if (!first) break;
+    const second = dealOne(unclaimed, rng, { forbid: new Set([first.kind]), avoid, seen: new Set([...seen, cardLabel(first)]), band });
+    if (!second) { single ??= first; continue; }
+    const pair: Deal = [first, second];
+    if (fittingAll(pair, unclaimed).length >= MIN_BOTH_FIT) return pair;
+    fallbackPair ??= pair;
+  }
+  if (fallbackPair) return fallbackPair;
+  return single ? [single, { kind: "wild" }] : [{ kind: "wild" }];
 }
 
 /** Starting countries are claims in round 0 worth 0 points; they still count for territory and region bonuses. */
@@ -241,11 +302,32 @@ export function unclaimedCodes(claims: Pick<Claim, "code">[]) {
   return allCodes().filter((code) => !taken.has(code));
 }
 
-/** 1 point per claim, 2 during the last three rounds. */
+/** The round multiplier: 1, or 2 in the last DOUBLE_POINT_ROUNDS rounds. */
 export function pointsForRound(round: number, totalRounds: number) {
   return round > totalRounds - DOUBLE_POINT_ROUNDS ? 2 : 1;
 }
 export const isDoubleRound = (round: number, totalRounds: number) => pointsForRound(round, totalRounds) === 2;
+
+/** How many cards of `deal` the country fits (wild fits everything). */
+export const matchCount = (deal: Deal, code: string): number => deal.filter((card) => cardFits(card, code)).length;
+/** Unclaimed countries that fit EVERY card of `deal`. */
+export const fittingAll = (deal: Deal, unclaimed: string[]): string[] => unclaimed.filter((code) => matchCount(deal, code) === deal.length);
+
+/**
+ * Points for a claim. matched 0 -> 0. Fitting every card of a pair of two or more -> POINTS_BOTH_CARDS, otherwise
+ * POINTS_ONE_CARD. Multiplied by the round multiplier unless `sudden`, which is always x1.
+ */
+export function pointsForClaim(matched: number, dealSize: number, round: number, totalRounds: number, sudden = false): number {
+  if (matched <= 0) return 0;
+  const base = matched === dealSize && dealSize >= 2 ? POINTS_BOTH_CARDS : POINTS_ONE_CARD;
+  return sudden ? base : base * pointsForRound(round, totalRounds);
+}
+
+/** "Both cards: +3" / "One card: +1" (points include any doubling). "" when `fit` is unknown or the deal has one card. */
+export function claimFitNote(fit: number | undefined, cards: number, points: number): string {
+  if (fit === undefined || cards < 2) return "";
+  return fit >= cards ? `Both cards: +${points}` : `One card: +${points}`;
+}
 
 /** Subregions with six or fewer countries in the game list. */
 export function smallRegions(): { name: string; codes: string[] }[] {
@@ -328,16 +410,27 @@ export function territoryLeader(playerIds: string[], claims: Pick<Claim, "code" 
   return { sizes, leader, size: top?.[1] ?? 0 };
 }
 
+/** Graded territory: +TERRITORY_POINTS_PER_GROUP per TERRITORY_GROUP_SIZE linked countries in your own largest group. */
+export const territoryPoints = (size: number) => Math.floor(size / TERRITORY_GROUP_SIZE) * TERRITORY_POINTS_PER_GROUP;
+
+/** Ids with the highest total, in playerIds order (all of them when tied; [] for no players). */
+export function topPlayers(playerIds: string[], scores: Record<string, Score>): string[] {
+  if (playerIds.length === 0) return [];
+  const top = Math.max(...playerIds.map((id) => scores[id]?.total ?? 0));
+  return playerIds.filter((id) => (scores[id]?.total ?? 0) === top);
+}
+
 export function computeScores(playerIds: string[], claims: Claim[]): Record<string, Score> {
   const regions = regionBonuses(claims);
-  const territory = territoryLeader(playerIds, claims);
   const scores: Record<string, Score> = {};
   for (const id of playerIds) {
-    const points = claims.filter((claim) => claim.playerId === id).reduce((sum, claim) => sum + claim.points, 0);
+    const own = claims.filter((claim) => claim.playerId === id);
+    const points = own.reduce((sum, claim) => sum + claim.points, 0);
+    const size = largestConnectedGroup(own.map((claim) => claim.code));
     const bonuses = [...(regions[id] ?? [])];
-    if (territory.leader === id) bonuses.push({ kind: "territory", label: `Largest territory (${territory.sizes[id]} linked)`, points: BONUS_POINTS });
+    if (territoryPoints(size) > 0) bonuses.push({ kind: "territory", label: `Territory (${size} linked)`, points: territoryPoints(size) });
     const bonusTotal = bonuses.reduce((sum, bonus) => sum + bonus.points, 0);
-    scores[id] = { points, bonuses, bonusTotal, total: points + bonusTotal, territory: territory.sizes[id] };
+    scores[id] = { points, bonuses, bonusTotal, total: points + bonusTotal, territory: size };
   }
   return scores;
 }
