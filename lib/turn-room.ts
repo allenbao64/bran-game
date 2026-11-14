@@ -344,11 +344,17 @@ export function turnSnapshot(room: TurnRoom, now: number) {
   const sudden = turn.sudden ?? null;
   // Sudden-death claims are never doubled: they are priced at the sudden round's own (non-doubling) round number.
   const pointRound = sudden ? turn.totalRounds + sudden.round : round;
+  const shownCards = dealOf(turn).map((card) => ({ ...card, label: cardLabel(card) }));
   const snapshot: Record<string, unknown> = {
     turn: {
       number: turn.number, round, totalRounds: turn.totalRounds, currentPlayerId: currentPlayerId(turn),
       startedAt: turn.startedAt, turnMs: turn.turnMs, serverNow: now, finished: turn.finished,
-      cards: dealOf(turn).map((card) => ({ ...card, label: cardLabel(card) })),
+      cards: shownCards,
+      // LEGACY, remove one deploy after the two-card release: tabs still running the old client read `card` and
+      // `cardLabel` (main's shape: a card object or null, and a label string or null) and show "No card" without them.
+      // `cardLabel` joins every label so a stale tab shows the whole deal. Nothing in the new client reads these two fields.
+      card: shownCards[0] ?? null,
+      cardLabel: shownCards.length ? shownCards.map((card) => card.label).join(" or ") : null,
       doubleRound: !sudden && isDoubleRound(round, turn.totalRounds),
       pointsOne: pointsForClaim(1, 1, pointRound, turn.totalRounds, Boolean(sudden)),
       pointsBoth: pointsForClaim(2, 2, pointRound, turn.totalRounds, Boolean(sudden)),

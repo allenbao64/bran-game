@@ -508,11 +508,11 @@ test("the feed marks claims that fit both cards", async () => {
 });
 
 /** An ended turns room: Host 4 points, Brian 2 (or 4 when `tie`). */
-function endedView({ winners, sudden = false, tie = false }: { winners?: string[]; sudden?: boolean; tie?: boolean }) {
+function endedView({ winners, sudden = false, tie = false, finished = true }: { winners?: string[]; sudden?: boolean; tie?: boolean; finished?: boolean }) {
   return {
     code: "ABC234", gameId: "countries", mode: "turns", status: "ended", startedAt: Date.now() - 1000, players: twoPlayers, playerId: "p1", myGuesses: [],
     countryClaims: { FR: "p2", DE: "p1" }, claimLog: [], scores: {}, awards: [],
-    turn: { number: 24, round: 12, totalRounds: 12, currentPlayerId: null, startedAt: Date.now(), turnMs: 15000, serverNow: Date.now(), finished: true, cards: [], doubleRound: false, pointsOne: 1, pointsBoth: 3, sudden: sudden ? { round: 1, maxRounds: 3, playerIds: ["p1", "p2"] } : null },
+    turn: { number: 24, round: 12, totalRounds: 12, currentPlayerId: null, startedAt: Date.now(), turnMs: 15000, serverNow: Date.now(), finished, cards: [], doubleRound: false, pointsOne: 1, pointsBoth: 3, sudden: sudden ? { round: 1, maxRounds: 3, playerIds: ["p1", "p2"] } : null },
     results: [
       { playerId: "p1", name: "Host", points: 4, bonuses: [], bonusTotal: 0, total: 4, guesses: [] },
       { playerId: "p2", name: "Brian", points: tie ? 4 : 2, bonuses: [], bonusTotal: 0, total: tie ? 4 : 2, guesses: [] }
@@ -538,6 +538,46 @@ test("turn-based results name the winner, share ties and mention sudden death", 
   assert.deepEqual(await shown(endedView({ winners: ["p1"], sudden: true })), { line: "Host wins in sudden death", labels: ["1ST", "2ND"] });
   assert.deepEqual(await shown(endedView({ winners: ["p1", "p2"], tie: true })), { line: "Host and Brian tie", labels: ["TIED 1ST", "TIED 1ST"] });
   assert.deepEqual(await shown(endedView({ winners: ["p1", "p2"], tie: true, sudden: true })), { line: "Host and Brian share the win after sudden death", labels: ["TIED 1ST", "TIED 1ST"] });
+});
+
+test("turn-based results for a game the host ended early say who leads and never claim a win", async () => {
+  const shown = async (view: unknown) => {
+    serve(() => view);
+    const doc = mount(session);
+    await settle(0);
+    const result = { line: doc.querySelector(".winner-line")?.textContent ?? "", labels: [...doc.querySelectorAll(".board article > small")].map((label) => label.textContent) };
+    unmountNow();
+    return result;
+  };
+  const sole = await shown(endedView({ winners: ["p1"], finished: false }));
+  assert.equal(sole.line, "Ended early. Host leads");
+  assert.doesNotMatch(sole.line, /wins/);
+  const tied = await shown(endedView({ winners: ["p1", "p2"], tie: true, finished: false }));
+  assert.equal(tied.line, "Ended early. Host and Brian are level");
+  assert.deepEqual(tied.labels, ["TIED 1ST", "TIED 1ST"]);
+  const soleSudden = await shown(endedView({ winners: ["p1"], sudden: true, finished: false }));
+  assert.equal(soleSudden.line, "Ended early. Host leads");
+  assert.doesNotMatch(soleSudden.line, /sudden/i);
+  const tiedSudden = await shown(endedView({ winners: ["p1", "p2"], tie: true, sudden: true, finished: false }));
+  assert.equal(tiedSudden.line, "Ended early. Host and Brian are level");
+  assert.doesNotMatch(tiedSudden.line, /sudden/i);
+});
+
+test("a naturally finished game still reads as before", async () => {
+  const shown = async (view: unknown) => {
+    serve(() => view);
+    const doc = mount(session);
+    await settle(0);
+    const line = doc.querySelector(".winner-line")?.textContent ?? "";
+    unmountNow();
+    return line;
+  };
+  assert.equal(await shown(endedView({ winners: ["p1"], finished: true })), "Host wins");
+  assert.equal(await shown(endedView({ winners: ["p1", "p2"], tie: true, finished: true })), "Host and Brian tie");
+  assert.equal(await shown(endedView({ winners: ["p1", "p2"], tie: true, sudden: true, finished: true })), "Host and Brian share the win after sudden death");
+  for (const view of [endedView({ winners: ["p1"], finished: true }), endedView({ winners: ["p1", "p2"], tie: true, finished: true })]) {
+    assert.doesNotMatch(await shown(view), /Ended early/);
+  }
 });
 
 test("the replay marks sudden-death claims", async () => {

@@ -39,10 +39,11 @@ function timeText(seconds: number) {
   return String(Math.floor(n / 60)).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0");
 }
 const turnSecondsOf = (room: { mode?: string; turnSeconds?: number }) => room.turnSeconds ?? (room.mode === "empire" ? DEFAULT_EMPIRE_TURN_SECONDS : DEFAULT_TURN_SECONDS);
-/** "Host wins", "Host and Brian tie", or "Host and Brian share the win after sudden death". */
-function winnerLine(winners: string[], players: Player[], sudden: boolean) {
+/** "Host wins", "Host and Brian tie", or "Host and Brian share the win after sudden death". When the host ended the game early (endedEarly), reads "Ended early. Host leads" or "Ended early. Host and Brian are level" and never mentions sudden death. */
+function winnerLine(winners: string[], players: Player[], sudden: boolean, endedEarly: boolean) {
   const names = winners.map((id) => players.find((player) => player.id === id)?.name ?? "Player");
   const list = names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  if (endedEarly) return names.length === 1 ? `Ended early. ${list} leads` : `Ended early. ${list} are level`;
   if (names.length === 1) return `${list} wins${sudden ? " in sudden death" : ""}`;
   return sudden ? `${list} share the win after sudden death` : `${list} tie`;
 }
@@ -327,7 +328,7 @@ export default function Home() {
       {room.gameId === "countries" && <div className="claim-lists">{players.map((player) => { const owned = Object.entries(countryClaims).filter(([, owner]) => owner === player.id).map(([code]) => countryByCode(code)?.name ?? code).sort(); return <div className="claim-list" key={player.id} style={{ borderColor: colorOf(player.id) }}><b style={{ color: colorOf(player.id) }}>{player.name}{player.id === playerId ? " (you)" : ""} · {owned.length}</b><div className="chips">{owned.length ? owned.map((countryName) => <span key={countryName} style={{ background: colorOf(player.id) }}>{countryName}</span>) : <em>Nothing claimed yet</em>}</div></div>; })}</div>}</section>
       <aside><div className="aside-title">PLAYERS <b>{players.length}/3</b></div>{players.map((player) => <div className="mini" key={player.id}><span style={{ background: colorOf(player.id), color: "#fff" }}>{player.name.slice(0,1).toUpperCase()}</span><b>{player.name}{player.id === playerId ? " (you)" : ""}</b>{isCountries && <i>{Object.values(countryClaims).filter((owner) => owner === player.id).length}</i>}</div>)}{players.find((player) => player.id === playerId)?.host && <button className="quiet end-round" disabled={busy} onClick={() => void endRound()}>End round &amp; reveal</button>}{notice && <p className="notice">{notice}</p>}</aside></div>}
     {stage === "results" && room && isTurns && <div className="panel results turns-results"><h1>Results</h1>
-      {winners.length > 0 && <p className="winner-line">{winnerLine(winners, players, Boolean(turn?.sudden))}</p>}
+      {winners.length > 0 && <p className="winner-line">{winnerLine(winners, players, Boolean(turn?.sudden), Boolean(turn && !turn.finished))}</p>}
       <div className="board">{sortedResults.map((result, index) => <article key={result.playerId} style={{ borderLeft: `4px solid ${colorOf(result.playerId)}`, paddingLeft: 12 }}><small>{winners.includes(result.playerId) && winners.length > 1 ? "TIED 1ST" : winners.includes(result.playerId) ? "1ST" : ["1ST","2ND","3RD"][index]}</small><b>{result.name}{result.playerId === playerId ? " · YOU" : ""}</b><strong>{result.total ?? 0}<small>POINTS</small></strong>
         <div className="breakdown"><span><em>Claims ({result.guesses.length})</em><em>{result.points ?? 0}</em></span>{(result.bonuses ?? []).map((bonus) => <span key={bonus.label}><em>{bonus.label}</em><em>+{bonus.points}</em></span>)}<span><em>Final score</em><em>{result.total ?? 0}</em></span></div>
         <div className="chips">{result.guesses.map((guess) => <span key={guess.code}>{guess.name}</span>)}</div></article>)}</div>
