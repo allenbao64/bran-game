@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { errorDetail } from "@/lib/error-detail";
 import { getRedis } from "@/lib/redis";
 import { isEmpireRoom, runEmpireAction, type EmpireRoom } from "@/lib/empire-room";
 import type { EmpireAction } from "@/lib/empire/types";
@@ -41,7 +42,8 @@ export async function POST(request: NextRequest) {
     const outcome = await runEmpireAction(redis, key, Date.now(), player.id, action);
     if ("error" in outcome) return error(outcome.error, outcome.status);
     return NextResponse.json({ ok: true, status: outcome.room.status });
-  } catch {
-    return error("The room service is unavailable. Try again in a moment.", 503);
+  } catch (cause) {
+    console.error("Empire POST failed:", cause);
+    return error(`The room service is unavailable${errorDetail(cause)}. Try again in a moment.`, 503);
   }
 }

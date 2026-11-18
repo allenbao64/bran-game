@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
+import { errorDetail } from "@/lib/error-detail";
 import { gameConfig, isGameId, type GameId } from "@/lib/games";
 import { DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, isStartClaim, isTurnRounds, isTurnSeconds, LEGACY_TURN_ROUNDS } from "@/lib/turn-rules";
 import { DEFAULT_EMPIRE_TURN_SECONDS, isEmpireTurnSeconds } from "@/lib/empire/types";
@@ -184,7 +185,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ code, gameId: joined.gameId ?? "countries", mode: joined.mode ?? "live", ...(joined.turnSeconds ? { turnSeconds: joined.turnSeconds } : {}), ...(joined.mode === "turns" ? { rounds: joined.rounds ?? LEGACY_TURN_ROUNDS } : {}), token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
   } catch (cause) {
     console.error("Room POST failed:", cause);
-    return error("The room service is unavailable. Try again in a moment.", 503);
+    return error(`The room service is unavailable${errorDetail(cause)}. Try again in a moment.`, 503);
   }
 }
 
@@ -262,6 +263,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(response);
   } catch (cause) {
     console.error("Room GET failed:", cause);
-    return error("The room service is unavailable. Try again in a moment.", 503);
+    return error(`The room service is unavailable${errorDetail(cause)}. Try again in a moment.`, 503);
   }
 }

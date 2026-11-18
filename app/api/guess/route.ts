@@ -3,6 +3,7 @@ import { countryByCode } from "@/lib/countries";
 import { championByCode } from "@/lib/champions";
 import { overwatchHeroByCode } from "@/lib/overwatch-heroes";
 import { gameConfig } from "@/lib/games";
+import { errorDetail } from "@/lib/error-detail";
 import { getRedis, ROOM_TTL_SECONDS } from "@/lib/redis";
 import { applyClaim, dealOf, isTurnsRoom, runTurnAction, type ClaimResult } from "@/lib/turn-room";
 
@@ -95,7 +96,8 @@ export async function POST(request: NextRequest) {
     if (claim.error) return NextResponse.json({ error: claim.error }, { status: claim.status ?? 409 });
     if (!claim.ok) return NextResponse.json({ error: `Could not claim that ${answerType}. Please try again.` }, { status: 503 });
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "The room service is unavailable. Try again in a moment." }, { status: 503 });
+  } catch (cause) {
+    console.error("Guess POST failed:", cause);
+    return NextResponse.json({ error: `The room service is unavailable${errorDetail(cause)}. Try again in a moment.` }, { status: 503 });
   }
 }
