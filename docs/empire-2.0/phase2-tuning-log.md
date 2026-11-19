@@ -26,7 +26,7 @@ These are the values in `lib/empire2/rules.ts` at phase 1 (section 1 of the phas
 | `largestEmpireMin` | 6 | 5 to 8 |
 | `explorerMinContinents` | 4 | 3 to 5 |
 
-Pinned (a change is a rule change and stops the work): `freeExpandsPerTurn, maxExpandsPerTurn, colonizeReliefCost, minColonizeCost, tradeWindsColonizeCost, goldenAgeCityIncome, goldRushBountyPay, closedBordersExtra, boomRegionCount, bountyCount, bountyMinFits, eventEvery, roundCap, capitalOffers, capitalMinNeighbours, minPlayers, maxPlayers, defaultTurnMs, allowedTurnMs, cityPoints, largestEmpirePoints, explorerPoints`, and the region-set point function.
+Pinned (a change is a rule change and stops the work): `freeExpandsPerTurn, colonizeReliefCost, minColonizeCost, tradeWindsColonizeCost, goldenAgeCityIncome, goldRushBountyPay, closedBordersExtra, boomRegionCount, bountyCount, bountyMinFits, eventEvery, roundCap, capitalOffers, capitalMinNeighbours, minPlayers, maxPlayers, defaultTurnMs, allowedTurnMs, cityPoints, largestEmpirePoints, explorerPoints`, and the region-set point function.
 
 ## Spec gaps
 

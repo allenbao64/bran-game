@@ -92,7 +92,7 @@ export function applyColonize(state: EmpireState, playerId: PlayerId, action: { 
 
   let s = updatePlayer(state, playerId, (p) => ({ ...p, influence: p.influence - cost }));
   s = patchState(s, { owners: { ...s.owners, [code]: playerId } });
-  if (spendsRelief && !(state.reliefUsed ?? []).includes(playerId)) {
+  if (spendsRelief && state.rules.cheapColonize === "oncePerGame" && !(state.reliefUsed ?? []).includes(playerId)) {
     s = patchState(s, { reliefUsed: [...(state.reliefUsed ?? []), playerId] });
   }
   const claimed = claimBounty(s, playerId, code, geo, turn.isSecondOfTwo);

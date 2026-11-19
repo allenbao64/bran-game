@@ -6,6 +6,7 @@ import test from "node:test";
 import { applyAction } from "@/lib/empire2/engine";
 import { actionCosts, computeIncome } from "@/lib/empire2/economy";
 import { resolveRules } from "@/lib/empire2/rules";
+import { createGame } from "@/lib/empire2/setup";
 import { isBackToBack, isSecondOfTwo, roundOrder, setupOrder } from "@/lib/empire2/order";
 import { computeTitles } from "@/lib/empire2/titles";
 import { scorePlayer } from "@/lib/empire2/victory";
@@ -58,7 +59,8 @@ const T = (round: number, seat: number, second = false): Turn => ({ round, seat,
 
 /**
  * Plays only end-of-turn actions for `rounds` rounds. `vps[r]` is the victory points by seat at the start of
- * round r+1 (set before the round's last turn, so the engine takes it as that round's snapshot).
+ * round r+1. They are set on the round's first turn (i === 0), so they are in place when the round's last turn
+ * ends, and the engine takes them as the next round's snapshot.
  */
 function walk(turnOrder: TurnOrder, n: number, vps: number[][], rounds = 4): Turn[] {
   const names = ids(n);
@@ -141,7 +143,8 @@ test("turnOrder rotate: back-to-back never happens for 3 and 4 players; with 2 p
     assert.equal(walk("rotate", n, FLAT(n)).filter((t) => t.second).length, 0, `${n} players`);
   }
   // With 2 players, rotate gives the same seats as snake (round 2 starts at seat 1, the last seat of round 1), so
-  // the rule is true at each boundary. The task brief said "never for 2 or more"; the stated rule gives this.
+  // the rule is true at each boundary: a round's first turn is back-to-back when its player also took the previous
+  // round's last turn (section 7.2).
   assert.deepEqual(walk("rotate", 2, FLAT(2)), [T(1, 0), T(1, 1), T(2, 1, true), T(2, 0), T(3, 0, true), T(3, 1), T(4, 1, true), T(4, 0)]);
 });
 
@@ -355,6 +358,14 @@ test("cheapColonize everyStuckTurn (default): every stuck turn's first colonize 
   assert.equal(lastCost(s), 2);
 });
 
+test("cheap colonize under the default rule does not record reliefUsed", () => {
+  const s = stuckGame("everyStuckTurn");
+  assert.equal(actionCosts(s).colonize, 2);
+  const after = ok(applyAction(s, "p0", { type: "colonize", code: "Z1" }, cheapCtx()));
+  assert.equal(lastCost(after), 2, "the reduced price applies");
+  assert.equal(after.reliefUsed, undefined, "reliefUsed is absent under everyStuckTurn");
+});
+
 test("cheapColonize oncePerGame: each player gets the relief once, then the full price while still stuck", () => {
   let s = stuckGame("oncePerGame");
   assert.equal(actionCosts(s).colonize, 2);
@@ -488,6 +499,25 @@ test("rules file rejects bad option values and names the key", () => {
     assert.ok(!parsed.ok && parsed.errors.some((e) => e.includes(key)), `${key} should be rejected`);
   }
   assert.deepEqual(parseRulesOverrides({ turnOrder: "x" }).ok, false);
+});
+
+test("createGame rejects invalid rule options", () => {
+  const bad: [string, unknown][] = [["turnOrder", "x"], ["winCheck", "x"], ["territoryPoints", "yes"], ["cheapColonize", "x"]];
+  for (const [key, value] of bad) {
+    const r = createGame({ playerIds: ["p0", "p1"], rules: { [key]: value } as Partial<Rules> }, ctx());
+    assert.equal(r.ok, false, `${key} = ${String(value)} should be rejected`);
+    if (!r.ok) {
+      assert.equal(r.error.code, "badRules");
+      assert.ok(r.error.message.includes(key), `message names ${key}`);
+    }
+  }
+  const valid: Partial<Rules>[] = [
+    { turnOrder: "snake" }, { turnOrder: "clockwise" }, { turnOrder: "rotate" }, { turnOrder: "leaderLast" },
+    { winCheck: "endOfTurn" }, { winCheck: "endOfRound" },
+    { territoryPoints: true }, { territoryPoints: false },
+    { cheapColonize: "everyStuckTurn" }, { cheapColonize: "oncePerGame" },
+  ];
+  for (const rules of valid) ok(createGame({ playerIds: ["p0", "p1"], rules }, ctx()));
 });
 
 test("the engine defaults are the current rules", () => {

@@ -3,8 +3,22 @@ import { setupOrder } from "./order";
 import { startRound } from "./turns";
 import { engineError, appendLog, freeCountries, isKnownCode, normCode, ownerOf, patchState, updatePlayer } from "./state";
 import { resolveRules } from "./rules";
-import type { Action, ActionResult, Ctx, EmpireState, GameConfig, Ok, Fail, CountryCode, PlayerId, SetupState } from "./types";
+import type { Action, ActionResult, Ctx, EmpireState, GameConfig, Ok, Fail, CountryCode, PlayerId, Rules, SetupState } from "./types";
 import type { Empire2Geo } from "./geo-adapter";
+
+const RULE_CHOICES = {
+  turnOrder: ["snake", "clockwise", "rotate", "leaderLast"],
+  winCheck: ["endOfTurn", "endOfRound"],
+  cheapColonize: ["everyStuckTurn", "oncePerGame"],
+} as const;
+
+/** The first rule option whose value is not one of its allowed values, or null when all are valid. */
+function invalidRuleKey(rules: Rules): keyof typeof RULE_CHOICES | "territoryPoints" | null {
+  for (const key of Object.keys(RULE_CHOICES) as (keyof typeof RULE_CHOICES)[]) {
+    if (!(RULE_CHOICES[key] as readonly unknown[]).includes(rules[key])) return key;
+  }
+  return typeof rules.territoryPoints === "boolean" ? null : "territoryPoints";
+}
 
 /**
  * Three capital offers on different continents, each with >= capitalMinNeighbours neighbours,
@@ -49,6 +63,8 @@ export function legalFootholds(state: EmpireState, playerId: PlayerId, geo: Empi
 export function createGame(config: GameConfig, ctx: Ctx): Ok<{ state: EmpireState }> | Fail {
   if (typeof config !== "object" || config === null) return engineError("badPlayerCount");
   const rules = resolveRules(config.rules);
+  const badKey = invalidRuleKey(rules);
+  if (badKey !== null) return engineError("badRules", `Rule option ${badKey} has an invalid value.`);
   const ids: PlayerId[] = Array.isArray(config.playerIds) ? config.playerIds : [];
   if (ids.length < rules.minPlayers || ids.length > rules.maxPlayers) return engineError("badPlayerCount");
   if (new Set(ids).size !== ids.length) return engineError("duplicatePlayer");

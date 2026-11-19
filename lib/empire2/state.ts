@@ -32,11 +32,12 @@ const MESSAGES: Record<EngineErrorCode, string> = {
   protectedRegionSet: "Countries in a completed region can't be annexed.",
   targetBelow: "You can only annex from players at or above you.",
   unknownAction: "Unknown action.",
+  badRules: "A rule option has an invalid value.",
 };
 
-/** A typed rejection with the exact UI message for its code. */
-export function engineError(code: EngineErrorCode): { ok: false; error: EngineError } {
-  return { ok: false, error: { code, message: MESSAGES[code] } };
+/** A typed rejection with the exact UI message for its code (or `detail` in place of the default message). */
+export function engineError(code: EngineErrorCode, detail?: string): { ok: false; error: EngineError } {
+  return { ok: false, error: { code, message: detail ?? MESSAGES[code] } };
 }
 
 /** Owner of a country, or undefined when free. Safe against prototype keys. */

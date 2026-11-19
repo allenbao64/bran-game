@@ -29,6 +29,8 @@ export function roundOrder(
     case "clockwise":
       return seats;
     case "rotate": {
+      // With 2 players, rotate gives the same seat sequence as snake, so back-to-back turns still occur; it only
+      // differs from snake at 3 or more players.
       const start = (((round - 1) % n) + n) % n;
       return seats.map((_, i) => (start + i) % n);
     }

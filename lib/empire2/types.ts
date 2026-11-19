@@ -179,7 +179,7 @@ export type EngineErrorCode =
   | "notOwned" | "alreadyCity" | "cityLimit" | "wrongCapital"
   | "notRival" | "notBordering" | "annexUsed" | "secondTurnNoAnnex" | "ceasefire"
   | "protectedCity" | "protectedStartingCapital" | "protectedFoothold" | "protectedRegionSet"
-  | "targetBelow" | "unknownAction";
+  | "targetBelow" | "unknownAction" | "badRules";
 export type EngineError = { code: EngineErrorCode; message: string };   // message: short, plain (UI-ready), see 13.4
 
 export type Ok<T> = { ok: true } & T;
