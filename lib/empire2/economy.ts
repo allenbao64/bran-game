@@ -60,12 +60,29 @@ export function actionCosts(state: EmpireState): ActionCosts {
     expand = base + (state.event === "closedBorders" ? r.closedBordersExtra : 0);
   }
 
-  const relief = t.noFrontierAtStart && t.colonizes === 0;
-  let colonize = r.colonizeCost;
-  if (relief) colonize = r.colonizeReliefCost;
-  if (state.event === "tradeWinds") colonize = Math.min(colonize, r.tradeWindsColonizeCost);
-  colonize = Math.max(colonize, r.minColonizeCost);
-
   const annexBlocked = state.event === "ceasefire" || t.isSecondOfTwo || t.annexed;
-  return { expand, colonize, city: r.cityCost, annex: annexBlocked ? null : r.annexCost };
+  return {
+    expand,
+    colonize: colonizePrice(state, reliefAvailable(state, t)),
+    city: r.cityCost,
+    annex: annexBlocked ? null : r.annexCost,
+  };
+}
+
+/** Colonize price with or without the stuck relief, after the trade winds event and the floor (section 8.2). */
+export function colonizePrice(state: EmpireState, relief: boolean): number {
+  const r = state.rules;
+  let colonize = relief ? r.colonizeReliefCost : r.colonizeCost;
+  if (state.event === "tradeWinds") colonize = Math.min(colonize, r.tradeWindsColonizeCost);
+  return Math.max(colonize, r.minColonizeCost);
+}
+
+/**
+ * Whether this turn may use the stuck relief: it is the turn's first colonize, no free country bordered the
+ * empire when the turn began, and (cheapColonize "oncePerGame") the player has not used the relief yet.
+ */
+export function reliefAvailable(state: EmpireState, t: TurnState): boolean {
+  if (!t.noFrontierAtStart || t.colonizes !== 0) return false;
+  if (state.rules.cheapColonize === "everyStuckTurn") return true;
+  return !(state.reliefUsed ?? []).includes(t.playerId);
 }

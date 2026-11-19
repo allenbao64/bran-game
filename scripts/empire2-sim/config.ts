@@ -65,6 +65,17 @@ export const TUNABLE_RANGES: Record<string, [number, number]> = {
   explorerMinContinents: [3, 5],
 };
 
+/**
+ * Engine options (plan step 2): each takes one of the listed strings, or a boolean. The defaults are the current rules.
+ * They are accepted in rules.json like the tunable numbers, and validated the same way.
+ */
+export const OPTION_CHOICES: Record<string, readonly string[] | "boolean"> = {
+  turnOrder: ["snake", "clockwise", "rotate", "leaderLast"],
+  winCheck: ["endOfTurn", "endOfRound"],
+  territoryPoints: "boolean",
+  cheapColonize: ["everyStuckTurn", "oncePerGame"],
+};
+
 /** Fields that must not change during tuning (a change means a rule change: STOP). */
 export const PINNED_KEYS: string[] = [
   "freeExpandsPerTurn", "maxExpandsPerTurn", "colonizeReliefCost", "minColonizeCost", "tradeWindsColonizeCost",
@@ -90,10 +101,22 @@ export function parseRulesOverrides(raw: unknown): RulesParse {
     return { ok: false, errors: ["rules file must be a JSON object"] };
   }
   const errors: string[] = [];
-  const overrides: Record<string, number> = {};
+  const overrides: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (PINNED_KEYS.includes(key)) {
       errors.push(`"${key}" is pinned (a rule change, not a tuning value)`);
+      continue;
+    }
+    if (key in OPTION_CHOICES) {
+      const choice = OPTION_CHOICES[key];
+      if (choice === "boolean") {
+        if (typeof value !== "boolean") errors.push(`"${key}" must be true or false`);
+        else overrides[key] = value;
+      } else if (typeof value !== "string" || !choice.includes(value)) {
+        errors.push(`"${key}" must be one of ${choice.map((c) => `"${c}"`).join(", ")}`);
+      } else {
+        overrides[key] = value;
+      }
       continue;
     }
     if (!(key in TUNABLE_RANGES)) {
@@ -112,10 +135,10 @@ export function parseRulesOverrides(raw: unknown): RulesParse {
     overrides[key] = value;
   }
   if (errors.length === 0) {
-    const boomIncome = overrides.boomIncome ?? EMPIRE2_RULES.boomIncome;
-    const boomCityIncome = overrides.boomCityIncome ?? EMPIRE2_RULES.boomCityIncome;
+    const boomIncome = (overrides.boomIncome as number | undefined) ?? EMPIRE2_RULES.boomIncome;
+    const boomCityIncome = (overrides.boomCityIncome as number | undefined) ?? EMPIRE2_RULES.boomCityIncome;
     if (boomCityIncome < boomIncome) errors.push(`"boomCityIncome" (${boomCityIncome}) must be >= "boomIncome" (${boomIncome})`);
-    const bountyPay = overrides.bountyPay ?? EMPIRE2_RULES.bountyPay;
+    const bountyPay = (overrides.bountyPay as number | undefined) ?? EMPIRE2_RULES.bountyPay;
     if (EMPIRE2_RULES.goldRushBountyPay < bountyPay) errors.push(`"bountyPay" (${bountyPay}) must be <= "goldRushBountyPay" (${EMPIRE2_RULES.goldRushBountyPay})`);
   }
   if (errors.length > 0) return { ok: false, errors };

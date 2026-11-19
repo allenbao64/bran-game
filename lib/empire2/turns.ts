@@ -2,17 +2,18 @@ import { drawBounties } from "./bounties";
 import type { Ctx, EmpireState, GameResult, IncomeBreakdown, PlayerId } from "./types";
 import { computeIncome, drawBooms } from "./economy";
 import { drawEvent } from "./events";
-import { isSecondOfTwo, roundOrder } from "./order";
+import { isBackToBack, roundSeatOrder } from "./order";
 import { appendLog, frontier, freeCountries, patchState } from "./state";
-import { scoreAll, scorePlayer, resolveCap, winnerAtTurnEnd } from "./victory";
+import { endOfRoundResult, scoreAll, scorePlayer, resolveCap, winnerAtTurnEnd } from "./victory";
 
-/** Starts a turn for the seat at `indexInRound` (section 7.3). */
+/** Starts a turn for the seat at `indexInRound` (section 7.3). `secondOfTwo` is decided by the caller (startRound). */
 export function beginTurn(
   state: EmpireState,
   seat: number,
   indexInRound: number,
   now: number,
   geo: Ctx["geo"],
+  secondOfTwo = false,
 ): EmpireState {
   const player = state.players.find((p) => p.seat === seat);
   if (!player) return state;
@@ -20,7 +21,7 @@ export function beginTurn(
     playerId: player.id,
     seat,
     indexInRound,
-    isSecondOfTwo: isSecondOfTwo(state.round, indexInRound),
+    isSecondOfTwo: secondOfTwo,
     startedAt: now,
     noFrontierAtStart: frontier(state, player.id, geo).length === 0,
     expands: 0,
@@ -37,6 +38,8 @@ export function startRound(state: EmpireState, round: number, ctx: Ctx): EmpireS
   const rules = state.rules;
   const n = state.players.length;
 
+  // The previous round's order uses its own snapshot, so read it before the snapshot is replaced below.
+  const previousOrder = state.round >= 1 ? roundSeatOrder(state, state.round) : null;
   let s = patchState(state, { round });
 
   const roundStartVp: Record<PlayerId, number> = {};
@@ -64,8 +67,9 @@ export function startRound(state: EmpireState, round: number, ctx: Ctx): EmpireS
 
   s = appendLog(s, { type: "roundStart", round, playerId: null, note: event ?? "" });
 
-  const firstSeat = roundOrder(round, n)[0];
-  return beginTurn(s, firstSeat, 0, ctx.now, geo);
+  const firstSeat = roundSeatOrder(s, round)[0];
+  const secondOfTwo = previousOrder !== null && isBackToBack(previousOrder[n - 1], firstSeat);
+  return beginTurn(s, firstSeat, 0, ctx.now, geo, secondOfTwo);
 }
 
 /**
@@ -87,24 +91,27 @@ export function endTurn(
   const vp = scorePlayer(state, P, geo).total;
   let s = patchState(state, { waitingWin: state.waitingWin.filter((id) => id !== P) });
 
-  if (winnerAtTurnEnd(vp, turn.isSecondOfTwo, rules.winPoints)) {
-    const scores = scoreAll(s, geo);
-    const vpAll: Record<PlayerId, number> = {};
-    const influence: Record<PlayerId, number> = {};
-    for (const p of s.players) {
-      vpAll[p.id] = scores[p.id].total;
-      influence[p.id] = p.influence;
+  // winCheck "endOfTurn" (default): a win or a delayed win is decided here. "endOfRound" decides at round end.
+  if (rules.winCheck === "endOfTurn") {
+    if (winnerAtTurnEnd(vp, turn.isSecondOfTwo, rules.winPoints)) {
+      const scores = scoreAll(s, geo);
+      const vpAll: Record<PlayerId, number> = {};
+      const influence: Record<PlayerId, number> = {};
+      for (const p of s.players) {
+        vpAll[p.id] = scores[p.id].total;
+        influence[p.id] = p.influence;
+      }
+      const result: GameResult = { winners: [P], reason: "points", round: s.round, vp: vpAll, influence };
+      s = patchState(s, { phase: "finished", turn: null, result });
+      return appendLog(s, { type: "win", round: s.round, playerId: P, second: turn.isSecondOfTwo });
     }
-    const result: GameResult = { winners: [P], reason: "points", round: s.round, vp: vpAll, influence };
-    s = patchState(s, { phase: "finished", turn: null, result });
-    return appendLog(s, { type: "win", round: s.round, playerId: P, second: turn.isSecondOfTwo });
-  }
 
-  if (turn.isSecondOfTwo && vp >= rules.winPoints) {
-    const waiting = [...s.waitingWin, P];
-    s = patchState(s, {
-      waitingWin: s.players.map((p) => p.id).filter((id) => waiting.includes(id)),
-    });
+    if (turn.isSecondOfTwo && vp >= rules.winPoints) {
+      const waiting = [...s.waitingWin, P];
+      s = patchState(s, {
+        waitingWin: s.players.map((p) => p.id).filter((id) => waiting.includes(id)),
+      });
+    }
   }
 
   s = appendLog(s, {
@@ -117,7 +124,15 @@ export function endTurn(
   const n = s.players.length;
   const next = turn.indexInRound + 1;
   if (next < n) {
-    return beginTurn(s, roundOrder(s.round, n)[next], next, endedAt, geo);
+    return beginTurn(s, roundSeatOrder(s, s.round)[next], next, endedAt, geo);
+  }
+  if (rules.winCheck === "endOfRound") {
+    const result = endOfRoundResult(s, geo);
+    if (result !== null) {
+      s = patchState(s, { phase: "finished", turn: null, result });
+      for (const w of result.winners) s = appendLog(s, { type: "win", round: s.round, playerId: w, second: false });
+      return s;
+    }
   }
   if (s.round >= rules.roundCap) {
     const result = resolveCap(s, geo);

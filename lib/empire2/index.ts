@@ -16,4 +16,6 @@ export { computeTitles } from "./titles";
 export { annexProtection, isAnnexable } from "./protection";
 export { bountyFits, bountyLabel } from "./bounties";
 export { eventLabel, EVENT_KINDS } from "./events";
-export { setupOrder, roundOrder, isSecondOfTwo } from "./order";
+export { setupOrder, roundOrder, roundSeatOrder, isSecondOfTwo, isBackToBack } from "./order";
+export { colonizePrice, reliefAvailable } from "./economy";
+export { endOfRoundResult } from "./victory";

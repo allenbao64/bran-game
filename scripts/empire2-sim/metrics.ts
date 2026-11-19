@@ -1,7 +1,7 @@
 // Metrics over GameRecord[] (section 4). Pure functions: no I/O. Empty input gives zeros, never NaN.
 import { PURE_STRATEGIES, type Strategy } from "./bots";
-import { roundOrder } from "@/lib/empire2";
-import type { EventKind, BountyKind } from "@/lib/empire2/types";
+import { EMPIRE2_RULES, roundOrder } from "@/lib/empire2";
+import type { BountyKind, EventKind, Rules } from "@/lib/empire2/types";
 import type { GameRecord, SeatRecord } from "./types";
 
 export const STRATEGY_ORDER: Strategy[] = [...PURE_STRATEGIES, "mixed"];
@@ -26,14 +26,18 @@ export function percentile(xs: number[], p: number): number {
 }
 
 /**
- * Turn position of the final-round winners (0-based, in the engine's roundOrder for the final round).
+ * Turn position of the final-round winners (0-based, in the engine's roundOrder for the final round, with the
+ * game's turn order; "leaderLast" reads the final round's start snapshot, startVp[rounds - 1]).
  * Each winner adds 1 / winners.length to its position. Cap-ended games count their winners too.
  */
-export function winnerPositions(records: GameRecord[]): { byPosition: number[]; games: number } {
+export function winnerPositions(
+  records: GameRecord[],
+  rules: Pick<Rules, "turnOrder"> = EMPIRE2_RULES,
+): { byPosition: number[]; games: number } {
   const maxN = records.reduce((a, g) => Math.max(a, g.n), 0);
   const byPosition: number[] = Array.from({ length: maxN }, () => 0);
   for (const g of records) {
-    const order = roundOrder(g.rounds, g.n);
+    const order = roundOrder(g.rounds, g.n, rules.turnOrder, g.startVp[g.rounds - 1]);
     for (const w of g.winners) byPosition[order.indexOf(w)] += 1 / g.winners.length;
   }
   return { byPosition, games: records.length };

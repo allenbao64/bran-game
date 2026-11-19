@@ -4,6 +4,13 @@ export type PlayerId = string;
 export type CountryCode = string;          // ISO alpha-2, uppercase
 export type Rng = () => number;            // returns [0, 1)
 
+/** Turn order within a round (see order.ts roundOrder). "snake" is the current rule. */
+export type TurnOrder = "snake" | "clockwise" | "rotate" | "leaderLast";
+/** When a win counts: at the end of the winner's own turn (current), or at the end of a round. */
+export type WinCheck = "endOfTurn" | "endOfRound";
+/** Stuck-colonize relief: every stuck turn (current), or once per player per game. */
+export type CheapColonize = "everyStuckTurn" | "oncePerGame";
+
 export type Rules = {
   startInfluence: number;          // 3
   baseIncome: number;              // 2
@@ -44,6 +51,10 @@ export type Rules = {
   maxPlayers: number;              // 4
   defaultTurnMs: number;           // 30000
   allowedTurnMs: number[];         // [20000, 30000, 45000]  (host options)
+  turnOrder: TurnOrder;            // "snake"  (today: ascending odd rounds, descending even rounds)
+  winCheck: WinCheck;              // "endOfTurn"  (today: a win is checked at the end of each turn)
+  territoryPoints: boolean;        // true  (today: territory scores 1 point per countriesPerTerritory)
+  cheapColonize: CheapColonize;    // "everyStuckTurn"  (today: the relief price applies on every stuck turn)
 };
 
 export type PlayerState = {
@@ -130,7 +141,7 @@ export type LogEntry = {
 };
 
 export type GameResult = {
-  winners: PlayerId[];             // 1 normally; more than 1 only on a full tie at the cap
+  winners: PlayerId[];             // 1 normally; more than 1 only on a full tie (at the cap, or at the end of a round under winCheck "endOfRound")
   reason: "points" | "cap";
   round: number;
   vp: Record<PlayerId, number>;
@@ -153,6 +164,7 @@ export type EmpireState = {
   bounties: BountyCard[];          // open bounty cards this round, in slot order
   event: EventKind | null;         // world event active THIS round
   titles: Titles;
+  reliefUsed?: PlayerId[];         // players who have used the stuck-colonize relief (absent = none); only the once-per-game rule reads it
   waitingWin: PlayerId[];          // players who ended a second-of-two turn with >= winPoints and have not yet had their next turn end
   lastIncome: Record<PlayerId, IncomeBreakdown> | null;  // what each player collected at the start of this round
   log: LogEntry[];                 // append-only

@@ -88,7 +88,7 @@ export function computeReport(records: GameRecord[], config: ConfigSpec, rules: 
   const sources = pointSources(records);
   const cb6 = comeback(records, 6, rules.underdogGap);
   const cb10 = comeback(records, 10, rules.underdogGap);
-  const winnerPosition = winnerPositions(records);
+  const winnerPosition = winnerPositions(records, rules);
 
   const values: Record<CheckId, { value: number; display: string; threshold: string; pass: (v: number) => boolean; note: string }> = {
     C1: {

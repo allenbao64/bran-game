@@ -5,7 +5,7 @@ import { resolveRules } from "@/lib/empire2/rules";
 import { computeTitles } from "@/lib/empire2/titles";
 import { scorePlayer } from "@/lib/empire2/victory";
 import { continentsOwned, frontier, largestGroupSize, ownedBy, ownerOf } from "@/lib/empire2/state";
-import { isSecondOfTwo, roundOrder } from "@/lib/empire2/order";
+import { isSecondOfTwo, roundOrder, roundSeatOrder } from "@/lib/empire2/order";
 import type {
   ActionResult, BountyCard, Ctx, EmpireState, EventKind, PlayerId, Rng, Rules, Titles,
 } from "@/lib/empire2/types";
@@ -143,6 +143,9 @@ export type PlaySpec = {
   roundStartVp?: Record<string, number>;
   titles?: Titles;
   waitingWin?: string[];
+  reliefUsed?: string[];
+  /** Required for a non-snake turn order when round >= 2 and indexInRound is 0 (the back-to-back flag). */
+  secondOfTwo?: boolean;
   rules?: Partial<Rules>;
 };
 
@@ -152,7 +155,8 @@ export function buildPlayState(spec: PlaySpec): EmpireState {
   const n = spec.players.length;
   const round = spec.round ?? 1;
   const indexInRound = spec.indexInRound ?? 0;
-  const seat = roundOrder(round, n)[indexInRound];
+  const roundStart = spec.players.map((p) => spec.roundStartVp?.[p.id] ?? 0);
+  const seat = roundOrder(round, n, rules.turnOrder, roundStart)[indexInRound];
   const owners: Record<string, PlayerId> = {};
   const cities: string[] = [];
   spec.players.forEach((p) => {
@@ -173,6 +177,9 @@ export function buildPlayState(spec: PlaySpec): EmpireState {
   }));
   const roundStartVp: Record<string, number> = {};
   for (const p of spec.players) roundStartVp[p.id] = spec.roundStartVp?.[p.id] ?? 0;
+  if (rules.turnOrder !== "snake" && round >= 2 && indexInRound === 0 && spec.secondOfTwo === undefined) {
+    throw new Error("buildPlayState: pass secondOfTwo for a non-snake turn order");
+  }
   const base: EmpireState = {
     version: 1,
     phase: "play",
@@ -193,6 +200,7 @@ export function buildPlayState(spec: PlaySpec): EmpireState {
     lastIncome: null,
     log: [],
     result: null,
+    ...(spec.reliefUsed ? { reliefUsed: spec.reliefUsed } : {}),
   };
   const withTitlesFrom = spec.titles ? base : { ...base, titles: computeTitles(base, spec.geo) };
   const playerId = players[seat].id;
@@ -200,7 +208,7 @@ export function buildPlayState(spec: PlaySpec): EmpireState {
     playerId,
     seat,
     indexInRound,
-    isSecondOfTwo: isSecondOfTwo(round, indexInRound),
+    isSecondOfTwo: spec.secondOfTwo ?? isSecondOfTwo(round, indexInRound),
     startedAt: spec.now ?? 0,
     noFrontierAtStart: frontier(withTitlesFrom, playerId, spec.geo).length === 0,
     expands: 0,
@@ -343,7 +351,7 @@ export function assertInvariants(before: EmpireState, after: EmpireState, geo: E
     assert.ok(after.round >= 1 && after.round <= rules.roundCap, `round ${after.round} out of range`);
     assert.ok(after.turn !== null, "play without a turn");
     if (after.turn) {
-      const expectedSeat = roundOrder(after.round, after.players.length)[after.turn.indexInRound];
+      const expectedSeat = roundSeatOrder(after, after.round)[after.turn.indexInRound];
       assert.equal(after.turn.seat, expectedSeat, "seat does not follow roundOrder");
       assert.equal(after.turn.playerId, after.players[expectedSeat].id, "turn player does not match seat");
     }
@@ -353,8 +361,19 @@ export function assertInvariants(before: EmpireState, after: EmpireState, geo: E
   if (before.phase !== "finished" && after.phase === "finished") {
     assert.ok(after.result !== null, "finished without a result");
     if (after.result && after.result.reason === "points") {
-      const winner = after.result.winners[0];
-      assert.equal(after.result.winners.length, 1, "points win with several winners");
+      const winners = after.result.winners;
+      if (rules.winCheck === "endOfTurn") {
+        assert.equal(winners.length, 1, "points win with several winners");
+      } else {
+        // endOfRound: nobody wins mid-round, and a shared win is a full tie on points and influence
+        assert.ok(before.turn && before.turn.indexInRound === after.players.length - 1, "endOfRound win before the round's last turn");
+        const vpOf = (id: string) => scorePlayer(after, id, geo).total;
+        for (const w of winners) {
+          assert.equal(vpOf(w), vpOf(winners[0]), "shared endOfRound win on different points");
+          assert.equal(after.players.find((p) => p.id === w)?.influence, after.players.find((p) => p.id === winners[0])?.influence, "shared endOfRound win on different influence");
+        }
+      }
+      const winner = winners[0];
       assert.ok(scorePlayer(after, winner, geo).total >= rules.winPoints, "winner below winPoints");
       assert.ok(!(before.turn && before.turn.isSecondOfTwo), "won on a second turn");
     } else if (after.result) {
@@ -362,7 +381,8 @@ export function assertInvariants(before: EmpireState, after: EmpireState, geo: E
     }
   }
 
-  // 11. waiting players were at winPoints when added
+  // 11. waiting players were at winPoints when added; endOfRound never uses the delayed win
+  if (rules.winCheck === "endOfRound") assert.deepEqual(after.waitingWin, [], "delayed win under endOfRound");
   for (const id of after.waitingWin) {
     if (!before.waitingWin.includes(id)) {
       assert.ok(scorePlayer(after, id, geo).total >= rules.winPoints, `${id} waits below winPoints`);

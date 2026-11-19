@@ -40,6 +40,10 @@ export const EMPIRE2_RULES: Rules = {
   maxPlayers: 4,
   defaultTurnMs: 30000,
   allowedTurnMs: [20000, 30000, 45000],
+  turnOrder: "snake",
+  winCheck: "endOfTurn",
+  territoryPoints: true,
+  cheapColonize: "everyStuckTurn",
 };
 
 /** A fresh rules object: the defaults with the overrides applied. */

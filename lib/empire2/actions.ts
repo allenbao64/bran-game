@@ -1,6 +1,6 @@
 import { findClaimableBounty } from "./bounties";
 import type { Empire2Geo } from "./geo-adapter";
-import { actionCosts } from "./economy";
+import { actionCosts, colonizePrice, reliefAvailable } from "./economy";
 import { annexProtection, type ProtectionReason } from "./protection";
 import { engineError, appendLog, freeCountries, frontier, isKnownCode, normCode, ownedBy, ownerOf, patchState, updatePlayer } from "./state";
 import { withTitles } from "./titles";
@@ -42,6 +42,11 @@ function claimBounty(
   return { state: s, pay };
 }
 
+/** The expand cap rejection, with the cap in the message (the default cap gives the original text). */
+function expandCapError(max: number): ActionResult {
+  return { ok: false, error: { code: "expandCap", message: `You can only expand ${max} times a turn.` } };
+}
+
 function requireTurn(state: EmpireState): TurnState | null {
   return state.turn;
 }
@@ -53,10 +58,10 @@ export function applyExpand(state: EmpireState, playerId: PlayerId, action: { co
   const code = normCode(action.code);
   if (code === null || !isKnownCode(geo, code)) return engineError("unknownCountry");
   if (ownerOf(state, code) !== undefined) return engineError("countryTaken");
-  if (turn.expands >= state.rules.maxExpandsPerTurn) return engineError("expandCap");
+  if (turn.expands >= state.rules.maxExpandsPerTurn) return expandCapError(state.rules.maxExpandsPerTurn);
   if (!frontier(state, playerId, geo).includes(code)) return engineError("notOnFrontier");
   const cost = actionCosts(state).expand;
-  if (cost === null) return engineError("expandCap");
+  if (cost === null) return expandCapError(state.rules.maxExpandsPerTurn);
   const player = state.players.find((p) => p.id === playerId);
   if (!player || player.influence < cost) return engineError("notEnoughInfluence");
 
@@ -82,9 +87,14 @@ export function applyColonize(state: EmpireState, playerId: PlayerId, action: { 
   const cost = actionCosts(state).colonize;
   const player = state.players.find((p) => p.id === playerId);
   if (!player || player.influence < cost) return engineError("notEnoughInfluence");
+  // The stuck relief is spent only when it lowers the price (not, e.g., when trade winds already do).
+  const spendsRelief = reliefAvailable(state, turn) && cost < colonizePrice(state, false);
 
   let s = updatePlayer(state, playerId, (p) => ({ ...p, influence: p.influence - cost }));
   s = patchState(s, { owners: { ...s.owners, [code]: playerId } });
+  if (spendsRelief && !(state.reliefUsed ?? []).includes(playerId)) {
+    s = patchState(s, { reliefUsed: [...(state.reliefUsed ?? []), playerId] });
+  }
   const claimed = claimBounty(s, playerId, code, geo, turn.isSecondOfTwo);
   s = claimed.state;
   s = setTurn(s, {
