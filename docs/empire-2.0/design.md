@@ -145,7 +145,7 @@ Players affect each other in four ways: blocking, annexing, racing for bounties 
 - Costs 5 influence and needs the target country's capital named correctly. A wrong capital costs nothing but uses that action's time.
 - The target must border your empire and belong to a player at or above you in the round-start standings, so nobody kicks someone who is already behind.
 - Cities, starting capitals, footholds from setup and countries in a completed region set can't be annexed.
-- Once a turn, and not on the second of two turns in a row (see "Back-to-back turns"). Losing a country can break a rival's largest empire or region set, so annexes are the big swing moments.
+- Once a turn, and not on the second of two turns in a row (see "Back-to-back turns"). Losing a country can break a rival's largest empire, so annexes are the big swing moments. A completed region set cannot be annexed, so an annex can never break one.
 
 ### Blocking
 

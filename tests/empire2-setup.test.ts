@@ -6,8 +6,14 @@ import { empire2Geo } from "@/lib/empire2/geo-adapter";
 import { autoSetupPick, createGame, legalFootholds } from "@/lib/empire2/setup";
 import { setupOrder } from "@/lib/empire2/order";
 import { currentPlayerId, ownedBy } from "@/lib/empire2/state";
-import { deepFreeze, err, miniGeo, mulberry32, ctxAt, ok, scriptedRng } from "@/tests/empire2-support";
-import type { EmpireState } from "@/lib/empire2/types";
+import { buildPlayState, deepFreeze, err, miniGeo, mulberry32, ctxAt, ok, scriptedRng } from "@/tests/empire2-support";
+import type { EmpireState, Rng } from "@/lib/empire2/types";
+
+/** Returns the given values in order, then falls back to `rest`. */
+function scriptThen(values: number[], rest: Rng): Rng {
+  let i = 0;
+  return () => (i < values.length ? values[i++] : rest());
+}
 
 const OFFERS2 = [0.9, 0.9, 0, 0, 0, 0.9, 0.9, 0, 0, 0];
 const GOLDEN_S = [
@@ -194,9 +200,10 @@ test("setup-13 autoSetupPick returns the first offer then the first legal footho
   assert.equal(autoSetupPick(done, at(5)), null);
 });
 
-test("setup-14 setup picks are not limited by back-to-back", () => {
-  // Spec gap (reported): when the picker has no legal foothold the spec does not say how setup proceeds.
-  // This test records that case instead of assuming a legal pick always exists.
+test("setup-14 a picker with no legal foothold is granted one, so setup always completes", () => {
+  // Owner decision (deadlock fallback): the engine never leaves a picker stuck with no legal foothold.
+  // This runs a full 3-player game; every picker that reaches the front of the foothold order has a legal
+  // foothold (or was granted one first), so the state advances to play with every player holding a foothold.
   const rng = mulberry32(11);
   const ctx = ctxAt(miniGeo, 0, rng);
   let s: EmpireState = ok(createGame({ playerIds: ["p1", "p2", "p3"] }, ctx));
@@ -207,25 +214,77 @@ test("setup-14 setup picks are not limited by back-to-back", () => {
     capitalPickers.push(who);
     s = ok(applyAction(s, who, { type: "pickCapital", code: s.setup?.offers[0] as string }, ctx));
   }
-  let stuck: string | null = null;
-  for (let i = 0; i < 3 && stuck === null; i++) {
+  while (s.phase === "setup") {
     const who = currentPlayerId(s) as string;
     footholdPickers.push(who);
     const code = legalFootholds(s, who, miniGeo)[0];
-    if (code === undefined) {
-      stuck = who;
-      break;
-    }
+    assert.notEqual(code, undefined, `${who} has no legal foothold: the engine should have granted one`);
     s = ok(applyAction(s, who, { type: "pickFoothold", code }, ctx));
   }
   assert.deepEqual(capitalPickers, ["p1", "p2", "p3"]);
   // p3 picks their capital (last of the capital order) and their foothold first (first of the foothold order)
-  assert.deepEqual(footholdPickers.slice(0, 2), ["p3", "p2"]);
-  if (stuck === null) {
-    assert.equal(s.phase, "play");
-  } else {
-    assert.equal(stuck, "p1");
-    assert.deepEqual(legalFootholds(s, "p1", miniGeo), []);
-    assert.equal(autoSetupPick(s, ctx), null);
-  }
+  assert.deepEqual(footholdPickers.slice(0, 1), ["p3"]);
+  assert.equal(s.phase, "play");
+  assert.equal(s.round, 1);
+  assert.ok(s.players.every((p) => p.foothold !== null), "every player holds a foothold");
+});
+
+test("setup-15 forced deadlock on miniGeo: the stuck picker is granted a random free country from the rng", () => {
+  // p1 holds A1, p2 holds A2 and p3 holds B1 (all capitals). Foothold order is p3, p2, p1. p3 picks G1 (legal).
+  //  - p2 is stuck: every free country borders a rival of p2 (A3..A6 border A1, B2..B6 border B1, G2..G6 border G1).
+  //    The fallback draws from ALL 14 free countries, ascending: floor(0.5 * 14) = 7 gives B5.
+  //  - p1 is then stuck too: A3..A6 border A2 (p2), B2..B4 and B6 border B1 (p3), G2..G6 border G1 (p3).
+  //    The fallback draws from the 13 remaining free countries: floor(0 * 13) = 0 gives A3.
+  //  Both fallback picks ignore the bordering rule (owner decision); setup then completes into round 1.
+  const base = buildPlayState({
+    geo: miniGeo,
+    players: [
+      { id: "p1", owned: ["A1"], capital: "A1" },
+      { id: "p2", owned: ["A2"], capital: "A2" },
+      { id: "p3", owned: ["B1"], capital: "B1" },
+    ],
+  });
+  const s0: EmpireState = deepFreeze({
+    ...base,
+    phase: "setup",
+    round: 0,
+    turn: null,
+    roundStartVp: {},
+    setup: { step: "foothold", order: [2, 1, 0], cursor: 0, offers: [] },
+  });
+  const ctx = ctxAt(miniGeo, 0, scriptThen([0.5, 0], mulberry32(5)));
+  const s1 = ok(applyAction(s0, "p3", { type: "pickFoothold", code: "G1" }, ctx));
+  assert.equal(s1.players[2].foothold, "G1");
+  assert.equal(s1.players[1].foothold, "B5");
+  assert.equal(s1.players[0].foothold, "A3");
+  assert.equal(s1.owners.B5, "p2");
+  assert.equal(s1.phase, "play");
+});
+
+test("setup-16 deadlock with no free country left: the foothold is skipped and only the capital remains", () => {
+  // Every country except B1 is owned. p2 picks B1 as its capital, which ends the capital step. The first foothold
+  // picker has no legal foothold and no free country exists, so the foothold is skipped; the second is skipped too.
+  const base = buildPlayState({
+    geo: miniGeo,
+    players: [
+      { id: "p1", owned: ["A1", "A2", "A3", "A4", "A5", "A6"], capital: "A1" },
+      { id: "p2", owned: ["B2", "B3", "B4", "B5", "B6", "G1", "G2", "G3", "G4", "G5", "G6"], capital: "G1" },
+    ],
+  });
+  const s0: EmpireState = deepFreeze({
+    ...base,
+    phase: "setup",
+    round: 0,
+    turn: null,
+    roundStartVp: {},
+    setup: { step: "capital", order: [0, 1], cursor: 1, offers: ["B1"] },
+  });
+  const ctx = ctxAt(miniGeo, 0, mulberry32(9));
+  const s1 = ok(applyAction(s0, "p2", { type: "pickCapital", code: "B1" }, ctx));
+  assert.equal(s1.phase, "play");
+  assert.equal(s1.round, 1);
+  assert.equal(s1.players[0].foothold, null);
+  assert.equal(s1.players[1].foothold, null);
+  assert.equal(s1.players[1].capital, "B1");
+  assert.equal(s1.owners.B1, "p2");
 });

@@ -1,7 +1,7 @@
 import { withTitles } from "./titles";
 import { setupOrder } from "./order";
 import { startRound } from "./turns";
-import { engineError, appendLog, isKnownCode, normCode, ownerOf, patchState, updatePlayer } from "./state";
+import { engineError, appendLog, freeCountries, isKnownCode, normCode, ownerOf, patchState, updatePlayer } from "./state";
 import { resolveRules } from "./rules";
 import type { Action, ActionResult, Ctx, EmpireState, GameConfig, Ok, Fail, CountryCode, PlayerId, SetupState } from "./types";
 import type { Empire2Geo } from "./geo-adapter";
@@ -94,6 +94,40 @@ function readType(action: unknown): string | null {
   return typeof t === "string" ? t : null;
 }
 
+/**
+ * Deadlock fallback (owner decision, option A). While the picker due next in the foothold step has no legal
+ * foothold, they are granted one random free country: one rng draw over ALL free countries (ascending).
+ * This knowingly drops the "does not border another player" constraint for this one fallback pick.
+ * If no country is free at all, the foothold is skipped and the player keeps only their capital.
+ * If the last picker is settled this way, setup completes into round 1 here.
+ */
+function settleFootholds(state: EmpireState, ctx: Ctx): EmpireState {
+  let s = state;
+  while (s.phase === "setup" && s.setup !== null && s.setup.step === "foothold") {
+    const setup = s.setup;
+    const seat = setup.order[setup.cursor];
+    const picker = s.players.find((p) => p.seat === seat);
+    if (!picker) break;
+    if (legalFootholds(s, picker.id, ctx.geo).length > 0) break;
+    const free = freeCountries(s, ctx.geo);
+    if (free.length > 0) {
+      const code = free[Math.min(free.length - 1, Math.floor(ctx.rng() * free.length))];
+      s = patchState(s, { owners: { ...s.owners, [code]: picker.id } });
+      s = updatePlayer(s, picker.id, (p) => ({ ...p, foothold: code }));
+      s = appendLog(s, { type: "foothold", round: 0, playerId: picker.id, code });
+    }
+    const cursor = setup.cursor + 1;
+    if (cursor < setup.order.length) {
+      s = patchState(s, { setup: { ...setup, cursor } });
+      continue;
+    }
+    s = patchState(s, { setup: null, phase: "play" });
+    s = withTitles(s, ctx.geo);
+    return startRound(s, 1, ctx);
+  }
+  return s;
+}
+
 export function applySetupAction(
   state: EmpireState,
   playerId: PlayerId,
@@ -129,6 +163,7 @@ export function applySetupAction(
       s = patchState(s, {
         setup: { step: "foothold", order: setupOrder(n).foothold, cursor: 0, offers: [] },
       });
+      s = settleFootholds(s, ctx);
     }
     return { ok: true, state: s };
   }
@@ -149,7 +184,7 @@ export function applySetupAction(
   s = appendLog(s, { type: "foothold", round: 0, playerId, code });
   const cursor = setup.cursor + 1;
   if (cursor < setup.order.length) {
-    return { ok: true, state: patchState(s, { setup: { ...setup, cursor } }) };
+    return { ok: true, state: settleFootholds(patchState(s, { setup: { ...setup, cursor } }), ctx) };
   }
   s = patchState(s, { setup: null, phase: "play" });
   s = withTitles(s, geo);

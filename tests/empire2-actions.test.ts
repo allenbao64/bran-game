@@ -372,9 +372,16 @@ test("ann-14 annex never claims a bounty", () => {
   assert.equal(next.bounties.length, 1);
 });
 
-test("ann-15 annexing can break the victim's largest empire and region set, and titles update in the same action", () => {
-  // Largest-empire part only. The region-set part of this name cannot happen under section 12.5: every country of a
-  // completed region is protected from annexing, so a completed set cannot be broken by an annex (reported to lead).
+test("ann-15 annexing cannot break a completed region set; largest empire still changes hands on an annex", () => {
+  // Region set: p2 completes Alpha East (A4, A5, A6). Every country of a completed set is protected (section 12.5),
+  // so annexing one is rejected and an annex can never break the set.
+  const complete = buildPlayState({
+    geo: miniGeo,
+    players: [{ id: "p1", owned: ["A1"], influence: 5 }, { id: "p2", owned: ["A4", "A5", "A6"] }],
+    titles: { largestEmpire: null, explorer: null },
+  });
+  assert.equal(err(applyAction(complete, "p1", { type: "annex", code: "A4", capital: "cap-a4" }, c0())), "protectedRegionSet");
+  // Largest empire: p1 holds 5 connected countries and p2's A6 is not in a completed set, so the annex moves the title.
   const s = buildPlayState({
     geo: miniGeo,
     players: [{ id: "p1", owned: ["A1", "A2", "A3", "A4", "A5"], influence: 5 }, { id: "p2", owned: ["A6"] }],
@@ -399,6 +406,9 @@ test("end-02 wrong player or wrong phase", () => {
   const finished = { ...s, phase: "finished" as const, turn: null };
   assert.equal(err(applyAction(finished, "p1", { type: "endTurn" }, c0())), "gameOver");
   const setupLike = { ...s, phase: "setup" as const, turn: null, setup: { step: "capital" as const, order: [0, 1], cursor: 0, offers: [] } };
+  // Through the dispatcher, a setup state goes to applySetupAction, which rejects non-pick types as unknownAction.
+  assert.equal(err(applyAction(setupLike, "p1", { type: "endTurn" }, c0())), "unknownAction");
+  // Called directly, the play handler still reports wrongPhase on a setup state.
   assert.equal(err(applyPlayAction(setupLike, "p1", { type: "endTurn" }, c0())), "wrongPhase");
 });
 
