@@ -220,8 +220,12 @@ test("rules file accepts tunable values and names the key when it rejects one", 
   assert.ok(good.ok && good.overrides.winPoints === 12);
   const unknown = parseRulesOverrides({ fooBar: 1 });
   assert.ok(!unknown.ok && unknown.errors.some((e) => e.includes("fooBar")));
-  const pinned = parseRulesOverrides({ maxExpandsPerTurn: 2 });
-  assert.ok(!pinned.ok && pinned.errors.some((e) => e.includes("maxExpandsPerTurn")));
+  const expands = parseRulesOverrides({ maxExpandsPerTurn: 2 });
+  assert.ok(expands.ok && expands.overrides.maxExpandsPerTurn === 2);
+  const expandsHigh = parseRulesOverrides({ maxExpandsPerTurn: 4 });
+  assert.ok(!expandsHigh.ok && expandsHigh.errors.some((e) => e.includes("maxExpandsPerTurn")));
+  const expandsZero = parseRulesOverrides({ maxExpandsPerTurn: 0 });
+  assert.ok(!expandsZero.ok && expandsZero.errors.some((e) => e.includes("maxExpandsPerTurn")));
   const fraction = parseRulesOverrides({ winPoints: 10.5 });
   assert.ok(!fraction.ok && fraction.errors.some((e) => e.includes("winPoints")));
   const range = parseRulesOverrides({ winPoints: 17 });
@@ -466,10 +470,11 @@ test("seat attribution: record seat k is the k-th player and plays lineup[k]", (
 
 test("waiting events equal second-of-two turns that ended at or above the win target", () => {
   const target = rules.winPoints;
+  let totalGained = 0;
   for (let g = 0; g < 3; g++) {
     let gained = 0;
     const rec = playGame({
-      geo: miniGeo, lineup: ["expander", "cityBuilder", "annexer"], seed: 700 + g, knowP: 0.6, slowP: 0,
+      geo: miniGeo, lineup: ["expander", "cityBuilder", "annexer"], seed: g, knowP: 0.6, slowP: 0,
       onStep: (before, after) => {
         const t = before.turn;
         if (t === null || !t.isSecondOfTwo) return;
@@ -479,7 +484,9 @@ test("waiting events equal second-of-two turns that ended at or above the win ta
       },
     });
     assert.equal(gained, rec.waiting.length, `game ${g}`);
+    totalGained += gained;
   }
+  assert.ok(totalGained >= 3, `only ${totalGained} waiting events`);
 });
 
 test("no player wins on a second-of-two turn", () => {
@@ -509,12 +516,14 @@ test("real map timeout path: timed-out turns finish the game and are counted as 
   assert.ok(skipped > 0, "no skipped turns");
 });
 
-test("documented rule: with two players every win is at turn position 1", () => {
-  // Documents the current back-to-back rule (finding R1): a second-of-two turn cannot win, so with two
-  // players the final-round winner is the seat that acts second. This test is expected to change if the rule changes.
+test("documented rule: with two players no final-round win is at turn position 1 (the second seat wins)", () => {
+  // Documents the current back-to-back rule (finding R1): under the current snake turn order and back-to-back
+  // rule, the second seat to act in the final round wins every game. Only points wins occur in these 10 games.
+  // This test is expected to change if the rule changes.
   const records: GameRecord[] = [];
   for (let g = 0; g < 10; g++) {
     records.push(playGame({ geo: empire2Geo, lineup: ["mixed", "mixed"], seed: 900 + g, knowP: 0.6, slowP: 0 }));
   }
   assert.equal(winnerPositions(records).byPosition[0], 0);
+  assert.equal(winnerPositions(records).byPosition[1], records.length);
 });
