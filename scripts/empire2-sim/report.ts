@@ -4,7 +4,7 @@ import { type CheckId, type ConfigSpec, DESIGN_VALUES } from "./config";
 import {
   annexStats, bountyStats, BOUNTY_KINDS, comeback, eventStats, type EventRow, incomeBuckets, lastPlaceAt,
   type LastPlaceResult, leaderChanges, lengthStats, pointSources, seatRates, strategyRows, type StrategyRow,
-  topStrategy, turnDiagnostics, worstSeat,
+  topStrategy, turnDiagnostics, winnerPositions, worstSeat,
 } from "./metrics";
 import type { GameRecord } from "./types";
 
@@ -58,6 +58,7 @@ export type ReportData = {
   bounties: ReturnType<typeof bountyStats>;
   events: EventRow[];
   flags: string[];
+  winnerPosition: ReturnType<typeof winnerPositions>;
   meta: RunMeta;
 };
 
@@ -87,6 +88,7 @@ export function computeReport(records: GameRecord[], config: ConfigSpec, rules: 
   const sources = pointSources(records);
   const cb6 = comeback(records, 6, rules.underdogGap);
   const cb10 = comeback(records, 10, rules.underdogGap);
+  const winnerPosition = winnerPositions(records);
 
   const values: Record<CheckId, { value: number; display: string; threshold: string; pass: (v: number) => boolean; note: string }> = {
     C1: {
@@ -229,6 +231,7 @@ export function computeReport(records: GameRecord[], config: ConfigSpec, rules: 
     bounties,
     events,
     flags,
+    winnerPosition,
     meta,
   };
 }
@@ -397,6 +400,12 @@ export function formatReport(d: ReportData): string {
   section("FLAGS");
   if (d.flags.length === 0) add("none");
   for (const f of d.flags) add(`FLAG ${f}`);
+
+  section("WINNER TURN POSITION (final round)");
+  d.winnerPosition.byPosition.forEach((count, k) => {
+    const share = count / d.games;
+    add(`position ${k + 1}: count ${count.toFixed(1)}, share ${pct(share)}`);
+  });
 
   out.push("");
   add(gateLine(d));

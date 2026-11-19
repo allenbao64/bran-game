@@ -1,5 +1,6 @@
 // Metrics over GameRecord[] (section 4). Pure functions: no I/O. Empty input gives zeros, never NaN.
 import { PURE_STRATEGIES, type Strategy } from "./bots";
+import { roundOrder } from "@/lib/empire2";
 import type { EventKind, BountyKind } from "@/lib/empire2/types";
 import type { GameRecord, SeatRecord } from "./types";
 
@@ -22,6 +23,20 @@ export function percentile(xs: number[], p: number): number {
   if (xs.length === 0) return 0;
   const s = [...xs].sort((a, b) => a - b);
   return s[Math.min(s.length - 1, Math.floor(p * s.length))];
+}
+
+/**
+ * Turn position of the final-round winners (0-based, in the engine's roundOrder for the final round).
+ * Each winner adds 1 / winners.length to its position. Cap-ended games count their winners too.
+ */
+export function winnerPositions(records: GameRecord[]): { byPosition: number[]; games: number } {
+  const maxN = records.reduce((a, g) => Math.max(a, g.n), 0);
+  const byPosition: number[] = Array.from({ length: maxN }, () => 0);
+  for (const g of records) {
+    const order = roundOrder(g.rounds, g.n);
+    for (const w of g.winners) byPosition[order.indexOf(w)] += 1 / g.winners.length;
+  }
+  return { byPosition, games: records.length };
 }
 
 /** Win share per seat: 1 / winners.length for each winner, 0 otherwise. */

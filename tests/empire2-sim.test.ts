@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { empire2Geo, legalMoves } from "@/lib/empire2";
+import { empire2Geo, legalMoves, scorePlayer } from "@/lib/empire2";
 import { resolveRules } from "@/lib/empire2/rules";
 import type { EmpireState, Rng } from "@/lib/empire2/types";
 import { decideTurn, makeKnownCapitals, type Strategy } from "@/scripts/empire2-sim/bots";
@@ -8,7 +8,8 @@ import { CONFIGS, parseRulesOverrides, type ConfigSpec } from "@/scripts/empire2
 import { mulberry32, streamSeed } from "@/scripts/empire2-sim/rng";
 import { lineupFor, playGame, runConfig } from "@/scripts/empire2-sim/runner";
 import {
-  annexStats, lastPlaceAt, leaderChanges, lengthStats, pointSources, strategyRows, topStrategy, turnDiagnostics, worstSeat,
+  annexStats, lastPlaceAt, leaderChanges, lengthStats, pointSources, strategyRows, topStrategy, turnDiagnostics, winnerPositions,
+  worstSeat,
 } from "@/scripts/empire2-sim/metrics";
 import { computeReport, formatReport } from "@/scripts/empire2-sim/report";
 import { emptyStats, type GameRecord, type SeatStats } from "@/scripts/empire2-sim/types";
@@ -401,4 +402,119 @@ test("fixture: the report is total on empty input and JSON round-trips", () => {
   assert.ok(empty.includes("no games"));
   const data = computeReport(ALL_FOUR, FIXTURE, rules, META);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(data)), data);
+});
+
+test("winner turn position in the final round follows the snake order", () => {
+  const rec = (n: number, rounds: number, winners: number[]): GameRecord =>
+    makeRecord({
+      seed: 1, lineup: Array.from({ length: n }, () => "expander" as Strategy), winners, rounds,
+      startVp: [], finalVp: Array.from({ length: n }, () => 0),
+    });
+  const W1 = rec(3, 7, [1]);   // odd round: order 0,1,2 -> position index 1
+  const W2 = rec(3, 6, [2]);   // even round: order 2,1,0 -> position index 0
+  const W3 = rec(3, 6, [1]);   // even round: order 2,1,0 -> position index 1
+  const W4 = rec(2, 5, [1]);   // odd round: order 0,1 -> position index 1
+  const all = winnerPositions([W1, W2, W3, W4]);
+  assert.deepEqual(all.byPosition, [1, 3, 0]);
+  assert.equal(all.games, 4);
+  assert.deepEqual(winnerPositions([W1]).byPosition, [0, 1, 0]);
+  assert.deepEqual(winnerPositions([W2]).byPosition, [1, 0, 0]);
+  assert.deepEqual(winnerPositions([W3]).byPosition, [0, 1, 0]);
+  assert.deepEqual(winnerPositions([W4]).byPosition, [0, 1]);
+});
+
+// ---------- 7. Real-map and engine-observer tests (at most 10 real games each) ----------
+
+test("real map: a two-player game is recorded consistently", () => {
+  const lineup: Strategy[] = ["expander", "cityBuilder"];
+  const rec = playGame({ geo: empire2Geo, lineup, seed: 3, knowP: 0.6, slowP: 0 });
+  assert.deepEqual(rec.seats.map((s) => s.seat), [0, 1]);
+  rec.seats.forEach((s, k) => assert.equal(s.strategy, lineup[k]));
+  assert.ok(rec.reason === "points" || rec.reason === "cap", `reason ${rec.reason}`);
+  if (rec.reason === "points") {
+    for (const w of rec.winners) assert.ok(rec.finalVp[w] >= rules.winPoints, `winner ${w} has ${rec.finalVp[w]} VP`);
+  }
+});
+
+test("seat attribution: record seat k is the k-th player and plays lineup[k]", () => {
+  const lineup: Strategy[] = ["expander", "cityBuilder", "colonizer"];
+  for (let seed = 0; seed < 5; seed++) {
+    let firstTurn: { seat: number; playerId: string } | null = null;
+    const rec = playGame({
+      geo: empire2Geo, lineup, seed, knowP: 0.6, slowP: 0,
+      onStep: (before, after) => {
+        if (firstTurn === null && before.phase === "setup" && after.phase === "play" && after.turn !== null) {
+          firstTurn = { seat: after.turn.seat, playerId: after.turn.playerId };
+          after.players.forEach((p, k) => {
+            assert.equal(p.seat, k, `seed ${seed}: player ${p.id} is not seat ${k}`);
+            assert.equal(p.id, `p${k}`);
+          });
+        }
+      },
+    });
+    assert.equal(rec.n, 3);
+    rec.seats.forEach((s, k) => {
+      assert.equal(s.seat, k, `seed ${seed}`);
+      assert.equal(s.strategy, lineup[k], `seed ${seed} seat ${k}`);
+      assert.equal(rec.finalVp.length, 3);
+      assert.equal(s.finalVp, rec.finalVp[k], `seed ${seed} seat ${k} VP`);
+    });
+    // Round 1 is odd, so the order is ascending: seat 0 (player p0) acts first.
+    assert.deepEqual(firstTurn, { seat: 0, playerId: "p0" }, `seed ${seed}`);
+  }
+});
+
+test("waiting events equal second-of-two turns that ended at or above the win target", () => {
+  const target = rules.winPoints;
+  for (let g = 0; g < 3; g++) {
+    let gained = 0;
+    const rec = playGame({
+      geo: miniGeo, lineup: ["expander", "cityBuilder", "annexer"], seed: 700 + g, knowP: 0.6, slowP: 0,
+      onStep: (before, after) => {
+        const t = before.turn;
+        if (t === null || !t.isSecondOfTwo) return;
+        if (!after.waitingWin.includes(t.playerId) || before.waitingWin.includes(t.playerId)) return;
+        gained += 1;
+        assert.ok(scorePlayer(before, t.playerId, miniGeo).total >= target, `game ${g}: waiting player below target`);
+      },
+    });
+    assert.equal(gained, rec.waiting.length, `game ${g}`);
+  }
+});
+
+test("no player wins on a second-of-two turn", () => {
+  for (let g = 0; g < 10; g++) {
+    const lineup: Strategy[] = g % 2 === 0 ? ["expander", "annexer"] : ["annexer", "expander"];
+    playGame({
+      geo: empire2Geo, lineup, seed: 1100 + g, knowP: 0.6, slowP: 0,
+      onStep: (before, after) => {
+        if (after.phase !== "finished" || after.result === null || before.turn === null) return;
+        if (after.result.reason === "points") {
+          assert.equal(before.turn.isSecondOfTwo, false, `game ${g}: points win on a second-of-two turn`);
+        }
+      },
+    });
+  }
+});
+
+test("real map timeout path: timed-out turns finish the game and are counted as skipped", () => {
+  let skipped = 0;
+  for (let g = 0; g < 3; g++) {
+    const rec = playGame({
+      geo: empire2Geo, lineup: ["expander", "cityBuilder", "annexer"], seed: 800 + g, knowP: 0.6, slowP: 0.1,
+    });
+    assert.ok(rec.rounds >= 1 && rec.winners.length >= 1, `game ${g} did not finish`);
+    skipped += rec.seats.reduce((a, s) => a + s.stats.skippedTurns, 0);
+  }
+  assert.ok(skipped > 0, "no skipped turns");
+});
+
+test("documented rule: with two players every win is at turn position 1", () => {
+  // Documents the current back-to-back rule (finding R1): a second-of-two turn cannot win, so with two
+  // players the final-round winner is the seat that acts second. This test is expected to change if the rule changes.
+  const records: GameRecord[] = [];
+  for (let g = 0; g < 10; g++) {
+    records.push(playGame({ geo: empire2Geo, lineup: ["mixed", "mixed"], seed: 900 + g, knowP: 0.6, slowP: 0 }));
+  }
+  assert.equal(winnerPositions(records).byPosition[0], 0);
 });
