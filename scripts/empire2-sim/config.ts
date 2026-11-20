@@ -67,8 +67,8 @@ export const TUNABLE_RANGES: Record<string, [number, number]> = {
   cityIncome: [1, 2],
   boomIncome: [1, 2],
   boomCityIncome: [1, 3],       // also >= boomIncome
-  underdogGap: [1, 3],
-  underdogIncome: [1, 3],
+  underdogGap: [1, 5],
+  underdogIncome: [0, 6],
   bountyPay: [1, 3],            // also <= goldRushBountyPay
   expandCost: [1, 2],
   maxExpandsPerTurn: [1, 3],
