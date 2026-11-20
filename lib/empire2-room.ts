@@ -196,7 +196,8 @@ export async function loadSyncedEmpire2Room(redis: Redis, key: string, now: numb
     const before = room.empire2Version ?? 0;
     if (!syncEmpire2(room, now) || await commit(redis, key, before, room)) return room;
   }
-  return room;
+  // Every save conflicted: the synced copy was never stored, so answer with the stored room (re-synced on the next read).
+  return load(redis, key);
 }
 
 export type Empire2ActionOutcome = { room: Empire2Room } | { error: string; status: number };

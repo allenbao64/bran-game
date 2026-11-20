@@ -5,8 +5,8 @@ import type { Redis } from "@upstash/redis";
 import { POST as roomPost, GET as roomGet } from "@/app/api/room/route";
 import { POST as empire2Post, GET as empire2Get } from "@/app/api/empire2/route";
 import { setRedisForTests } from "@/lib/redis";
-import { setEmpire2RngForTests } from "@/lib/empire2-room";
-import { empire2Geo } from "@/lib/empire2";
+import { EMPIRE2_CAS_SCRIPT, loadSyncedEmpire2Room, normalizeEmpire2State, setEmpire2RngForTests } from "@/lib/empire2-room";
+import { empire2Geo, type EmpireState } from "@/lib/empire2";
 import { MemoryRedis } from "./memory-redis";
 
 type Session = { code: string; token: string; playerId: string; name: string };
@@ -423,6 +423,83 @@ test("the host end does not break array fields (R1)", async () => {
   assert.ok(Array.isArray(view.log));
 });
 
+test("the host end during setup does not break array fields (R1, setup)", async () => {
+  const sessions = await empire2Game(2);
+  const key = roomKey(sessions[0].code);
+  assert.equal((await viewOf(sessions[0])).phase, "capital");
+  assert.equal((await postRoom({ action: "end", code: sessions[0].code, token: sessions[0].token, name: "Host" })).status, 200);
+  await store.set(key, luaEncoded((await store.get<View>(key))!));
+  assert.equal(Array.isArray((await store.get<View>(key))!.empire2!.booms), false, "the Lua encoding turned the empty booms list into an object");
+  const log = await json(await getLog(sessions[0]));
+  assert.equal(log.endedBy, "host");
+  assert.ok(Array.isArray(log.log));
+  assert.ok(Array.isArray(log.roundVp));
+  assert.ok(Array.isArray(log.finalState.booms));
+  const view = await viewOf(sessions[1]);
+  assert.equal(view.phase, "ended");
+  assert.ok(Array.isArray(view.booms));
+  assert.ok(Array.isArray(view.cities));
+});
+
+/** The array fields the engine reads, emptied, as the Lua encoder would receive them (every [] becomes {} after luaEncoded). */
+function withEmptyArrays(state: View): View {
+  const out: View = { ...state, waitingWin: [], booms: [], bounties: [], cities: [], log: [] };
+  if (state.reliefUsed !== undefined) out.reliefUsed = [];
+  if (state.setup) out.setup = { ...state.setup, order: [], offers: [] };
+  if (state.turn) out.turn = { ...state.turn, actions: [] };
+  if (state.result) out.result = { ...state.result, winners: [] };
+  return out;
+}
+
+function assertNormalised(state: View, name: string) {
+  for (const field of ["waitingWin", "booms", "bounties", "cities", "log"]) assert.ok(Array.isArray(state[field]), `${name}: ${field} is an array`);
+  if (state.reliefUsed !== undefined) assert.ok(Array.isArray(state.reliefUsed), `${name}: reliefUsed is an array`);
+  if (state.setup) for (const field of ["order", "offers"]) assert.ok(Array.isArray(state.setup[field]), `${name}: setup.${field} is an array`);
+  if (state.turn) assert.ok(Array.isArray(state.turn.actions), `${name}: turn.actions is an array`);
+  if (state.result) assert.ok(Array.isArray(state.result.winners), `${name}: result.winners is an array`);
+  for (const field of ["owners", "roundStartVp"]) {
+    assert.equal(typeof state[field], "object", `${name}: ${field} is an object`);
+    assert.equal(Array.isArray(state[field]), false, `${name}: ${field} is not an array`);
+  }
+}
+
+/** Plays the naive policy until the engine reports the game finished. */
+async function playToEnd(sessions: Session[]) {
+  for (let step = 0; step < 3000; step++) {
+    const view = await viewOf(sessions[0]);
+    if (view.phase === "ended") return;
+    const session = sessionFor(sessions, view.currentPlayerId);
+    const mine = await viewOf(session);
+    let response = await act(session, chooseMove(mine));
+    if (response.status !== 200) response = await act(session, { type: "endTurn" });
+    assert.equal(response.status, 200);
+  }
+  throw new Error("the game did not end");
+}
+
+test("normalisation restores every array field Lua turns into objects", async () => {
+  const sessions = await empire2Game(2);
+  const key = roomKey(sessions[0].code);
+  await viewOf(sessions[0]);
+  const setupRoom = (await store.get<View>(key))!;
+  await finishSetup(sessions);
+  const playRoom = (await store.get<View>(key))!;
+  await playToEnd(sessions);
+  const endedRoom = (await store.get<View>(key))!;
+  assert.equal(setupRoom.empire2!.phase, "setup");
+  assert.ok(playRoom.empire2!.turn, "the play-phase state has a turn");
+  assert.equal(endedRoom.empire2!.phase, "finished");
+  for (const [name, room] of [["setup", setupRoom], ["play", playRoom], ["finished", endedRoom]] as const) {
+    const encoded = luaEncoded({ ...room, empire2: withEmptyArrays(room.empire2 as View), empire2RoundVp: [] }) as View;
+    assert.equal(Array.isArray(encoded.empire2.booms), false, `${name}: the encoding turned booms into an object`);
+    assertNormalised(normalizeEmpire2State(encoded.empire2 as EmpireState) as View, `${name} (normalizeEmpire2State)`);
+    await store.set(key, encoded);
+    const loaded = (await loadSyncedEmpire2Room(store as unknown as Redis, key, clock))!;
+    assertNormalised(loaded.empire2 as View, `${name} (room load)`);
+    assert.ok(Array.isArray(loaded.empire2RoundVp), `${name}: empire2RoundVp is an array`);
+  }
+});
+
 test("create rejects bad empire2 options", async () => {
   const badSpeed = await postRoom({ action: "create", name: "Host", mode: "empire2", turnSeconds: 15 });
   assert.equal(badSpeed.status, 400);
@@ -496,4 +573,114 @@ test("a setup pick that runs out of time is made by the server (R2)", async () =
   assert.notEqual(later.currentPlayerId, picker.playerId, "the pick passed to the other player");
   assert.equal(later.owners[offered], picker.playerId, "the server took the first offer for the timed-out player");
   assert.equal((await viewOf(picker)).players.find((p: View) => p.id === picker.playerId).capital, offered);
+});
+
+test("a 4-player game gives every player a different colour", async () => {
+  const sessions = await empire2Game(4);
+  const view = await viewOf(sessions[0]);
+  assert.equal(view.phase, "capital");
+  assert.equal(view.players.length, 4);
+  const colors: string[] = view.players.map((p: View) => p.color);
+  assert.equal(new Set(colors).size, 4, colors.join(", "));
+});
+
+test("the compare-and-set writes only when version and status match", async () => {
+  const sessions = await empire2Game(2);
+  const key = roomKey(sessions[0].code);
+  await viewOf(sessions[0]);
+  const stored = (await store.get<View>(key))!;
+  const version = stored.empire2Version as number;
+  assert.ok(version >= 1, "the first read stored a version");
+  // Argument order as in commit(): expected version, the new room JSON, the TTL.
+  const cas = async (storeKey: string, expected: number, room: View) => {
+    const result = await store.eval(EMPIRE2_CAS_SCRIPT, [storeKey], [String(expected), JSON.stringify(room), "3600"]);
+    return (typeof result === "string" ? JSON.parse(result) : result) as { ok?: boolean; conflict?: boolean; error?: string };
+  };
+  const next = { ...stored, empire2Version: version + 1 };
+  assert.deepEqual(await cas(key, version - 1, next), { conflict: true }, "a stale version conflicts");
+  assert.deepEqual(await store.get(key), stored, "a conflict writes nothing");
+  for (const status of ["ended", "waiting"]) {
+    await store.set(key, { ...stored, status });
+    assert.deepEqual(await cas(key, version, next), { conflict: true }, `status ${status} conflicts`);
+  }
+  await store.set(key, stored);
+  assert.deepEqual(await cas(key, version, next), { ok: true }, "the right version and status write");
+  assert.equal((await store.get<View>(key))!.empire2Version, version + 1, "the stored room is updated");
+  assert.deepEqual(await cas("bran:room:NOPE12", version, next), { error: "Room not found." }, "a missing key");
+});
+
+test("an action uses the token's player, never a player id in the body", async () => {
+  const sessions = await empire2Game(2);
+  const key = roomKey(sessions[0].code);
+  const forge = (from: Session, playerId: string, action: Record<string, unknown>) => empire2Post(new NextRequest("http://localhost/api/empire2", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: from.code, token: from.token, playerId, action }),
+  }));
+  // Setup: the rival (not the current picker) names the picker in the body.
+  const setupView = await viewOf(sessions[0]);
+  const picker = sessionFor(sessions, setupView.currentPlayerId);
+  const rival = other(sessions, picker);
+  const offer = (await viewOf(picker)).setup.offers[0] as string;
+  const before = JSON.stringify(await store.get(key));
+  const refused = await forge(rival, picker.playerId, { type: "pickCapital", code: offer });
+  assert.equal(refused.status, 409);
+  assert.equal((await json(refused)).error, "It's not your turn.");
+  assert.equal(JSON.stringify(await store.get(key)), before, "the room is unchanged after the setup refusal");
+  // Play: the same forgery during an expand.
+  const playing = await finishSetup(sessions);
+  const turnPlayer = sessionFor(sessions, playing.currentPlayerId);
+  const turnRival = other(sessions, turnPlayer);
+  const expand = (await viewOf(turnPlayer)).legal.expand[0] as string;
+  const beforePlay = JSON.stringify(await store.get(key));
+  const refusedPlay = await forge(turnRival, turnPlayer.playerId, { type: "expand", code: expand });
+  assert.equal(refusedPlay.status, 409);
+  assert.equal((await json(refusedPlay)).error, "It's not your turn.");
+  assert.equal(JSON.stringify(await store.get(key)), beforePlay, "the room is unchanged after the play refusal");
+});
+
+test("catching up several timeouts records each round once", async () => {
+  const sessions = await empire2Game(2);
+  const playing = await finishSetup(sessions);
+  clock += 6 * playing.turnMs;
+  // One read: the log export runs the clocks.
+  const log = await json(await getLog(sessions[0]));
+  const rounds: number[] = log.roundVp.map((entry: View) => entry.round);
+  const roundStarts = log.log.filter((entry: View) => entry.type === "roundStart");
+  assert.ok(roundStarts.length >= 3, `${roundStarts.length} round starts after six timeouts`);
+  assert.equal(rounds.length, roundStarts.length, "one roundVp entry per round-start entry");
+  assert.deepEqual(rounds, rounds.map((_, index) => index + 1), `round numbers ${rounds.join(", ")}`);
+  assert.equal(log.log.filter((entry: View) => entry.type === "timeout").length, 6, "six timeouts were applied");
+});
+
+test("a POST with a body that is not JSON gets 400", async () => {
+  await empire2Game(2);
+  const send = (body: string) => empire2Post(new NextRequest("http://localhost/api/empire2", {
+    method: "POST", headers: { "content-type": "application/json" }, body,
+  }));
+  for (const body of ["not json", "null", "[]", "7"]) {
+    const response = await send(body);
+    assert.equal(response.status, 400, `body ${JSON.stringify(body)}`);
+    assert.equal((await json(response)).error, "That action isn't valid.");
+  }
+});
+
+test("a read whose save keeps conflicting returns the stored room, not an unsaved one", async () => {
+  const sessions = await empire2Game(2);
+  const key = roomKey(sessions[0].code);
+  const playing = await finishSetup(sessions);
+  const eval_ = store.eval.bind(store);
+  store.eval = async (script: string, keys: string[], args: string[]) => (
+    script.includes("room.empire2Version") ? { conflict: true } : eval_(script, keys, args)
+  );
+  clock += playing.turnMs + 1;
+  let view: View;
+  try {
+    view = await viewOf(sessions[0]);
+  } finally {
+    store.eval = eval_;
+  }
+  const stored = (await store.get<View>(key))!.empire2 as View;
+  assert.equal(view.currentPlayerId, stored.turn.playerId, "the turn the stored room holds, not the timed-out one");
+  assert.equal(view.round, stored.round);
+  assert.equal(view.log.some((line: string) => /time ran out/i.test(line)), false, "the timeout was not applied");
 });

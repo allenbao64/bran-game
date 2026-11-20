@@ -38,7 +38,8 @@ function parseAction(value: unknown): Empire2Action | null {
 export async function POST(request: NextRequest) {
   try {
     const redis = getRedis();
-    const body = await request.json();
+    const body = await request.json().catch(() => null) as Record<string, any> | null;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return error("That action isn't valid.");
     const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
     const token = typeof body.token === "string" ? body.token : "";
     if (!CODE.test(code) || token.length < 32) return error("Room session is invalid.", 401);

@@ -1,5 +1,5 @@
 /** One colour per seat, assigned by join order so every browser agrees. */
-export const PLAYER_COLORS = ["#d4553a", "#2f78c4", "#e0a526"] as const;
+export const PLAYER_COLORS = ["#d4553a", "#2f78c4", "#e0a526", "#7a5cb8"] as const;
 
 export function playerColor(playerIds: string[], playerId: string) {
   const index = playerIds.indexOf(playerId);
