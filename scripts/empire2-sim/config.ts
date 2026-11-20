@@ -75,7 +75,9 @@ export const TUNABLE_RANGES: Record<string, [number, number]> = {
   cityCost: [2, 5],
   colonizeCost: [3, 6],
   annexCost: [4, 8],
-  maxCities: [3, 5],
+  maxCities: [3, 6],
+  largestEmpirePoints: [1, 5],
+  boomRegionCount: [2, 6],
   largestEmpireMin: [5, 8],
   explorerMinContinents: [3, 5],
 };
@@ -95,9 +97,9 @@ export const OPTION_CHOICES: Record<string, readonly string[] | "boolean"> = {
 /** Fields that must not change during tuning (a change means a rule change: STOP). */
 export const PINNED_KEYS: string[] = [
   "freeExpandsPerTurn", "colonizeReliefCost", "minColonizeCost", "tradeWindsColonizeCost",
-  "goldenAgeCityIncome", "goldRushBountyPay", "closedBordersExtra", "boomRegionCount", "bountyCount",
+  "goldenAgeCityIncome", "goldRushBountyPay", "closedBordersExtra", "bountyCount",
   "bountyMinFits", "eventEvery", "roundCap", "capitalOffers", "capitalMinNeighbours", "minPlayers",
-  "maxPlayers", "defaultTurnMs", "allowedTurnMs", "cityPoints", "largestEmpirePoints", "explorerPoints",
+  "maxPlayers", "defaultTurnMs", "allowedTurnMs", "cityPoints", "explorerPoints",
 ];
 
 /** The design values (section 1 table) that the tuning summary compares against. */
