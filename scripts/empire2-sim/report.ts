@@ -1,6 +1,6 @@
 // The report: ReportData (deterministic, plus meta) and the plain-text formatter (section 5).
 import type { Rules } from "@/lib/empire2/types";
-import { type CheckId, type ConfigSpec, DESIGN_VALUES } from "./config";
+import { type BaseName, type CheckId, type ConfigSpec, DESIGN_VALUES } from "./config";
 import {
   annexStats, bountyStats, BOUNTY_KINDS, comeback, eventStats, type EventRow, incomeBuckets, lastPlaceAt,
   type LastPlaceResult, leaderChanges, lengthStats, pointSources, seatRates, strategyRows, type StrategyRow,
@@ -10,6 +10,8 @@ import type { GameRecord } from "./types";
 
 export type RunMeta = {
   seedBase: number;
+  /** The base the run started from (run.ts --base). Absent in older callers: read as "default". */
+  base?: BaseName;
   overrides: Partial<Rules>;
   startedAt: string;
   wallSeconds: number;
@@ -36,9 +38,12 @@ export type ReportData = {
   role: string;
   games: number;
   seedBase: number;
+  base: BaseName;
   knowP: number;
   slowP: number;
   overrides: Partial<Rules>;
+  /** False when the explorer title is off (EMPIRE2_PLAY_RULES): the report prints n/a for explorer points. */
+  explorerTitle: boolean;
   rulesInForce: Record<"winPoints" | "baseIncome" | "startInfluence" | "expandCost" | "cityCost" | "colonizeCost" | "annexCost" | "countriesPerTerritory", number>;
   changedFromDesign: string[];
   checks: CheckRow[];
@@ -196,9 +201,11 @@ export function computeReport(records: GameRecord[], config: ConfigSpec, rules: 
     role: config.role,
     games: records.length,
     seedBase: meta.seedBase,
+    base: meta.base ?? "default",
     knowP: config.knowP,
     slowP: config.slowP,
     overrides: meta.overrides,
+    explorerTitle: rules.explorerTitle !== false,
     rulesInForce: {
       winPoints: rules.winPoints,
       baseIncome: rules.baseIncome,
@@ -262,6 +269,7 @@ export function formatReport(d: ReportData): string {
   add(
     `config: ${d.id}  map=${d.map} players=${d.n} field=${d.field} games=${d.games} seeds=${d.seedBase}..${d.seedBase + Math.max(d.games, 1) - 1}`,
   );
+  add(`base: ${d.base} (${d.base === "play" ? "EMPIRE2_PLAY_RULES" : "EMPIRE2_RULES"})`);
   add(`know=${d.knowP} slow=${d.slowP}`);
   add(`rules overrides: ${Object.keys(d.overrides).length > 0 ? JSON.stringify(d.overrides) : "none"}`);
   const r = d.rulesInForce;
@@ -328,6 +336,10 @@ export function formatReport(d: ReportData): string {
     ["territory", "territory"], ["cities", "cities"], ["region sets", "regionSets"], ["largest empire", "largestEmpire"], ["explorer", "explorer"],
   ];
   for (const [label, key] of srcNames) {
+    if (key === "explorer" && !d.explorerTitle) {
+      add(`${label.padEnd(16)}n/a (title off)`);
+      continue;
+    }
     add([label.padEnd(16), pct(d.pointSources.winners[key]).padStart(10), pct(d.pointSources.all[key]).padStart(8)].join(""));
   }
 

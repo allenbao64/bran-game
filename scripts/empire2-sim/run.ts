@@ -1,7 +1,7 @@
 /**
  * Empire 2.0 bot simulation CLI (spec section 3.4).
  * Run: node --import tsx scripts/empire2-sim/run.ts [--config id] [--gate] [--sensitivity] [--games N]
- *      [--seed-base N] [--rules path] [--know P] [--slow P] [--check] [--tuning-log "change | decision"] [--out dir]
+ *      [--seed-base N] [--rules path] [--base play|default] [--know P] [--slow P] [--check] [--tuning-log "change | decision"] [--out dir]
  * Exit codes: 0 normal; 1 a GATE config fails a check; 2 bad arguments or rules file; 3 a thrown bug.
  */
 import { execSync } from "node:child_process";
@@ -9,13 +9,16 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join, resolve } from "node:path";
 import { resolveRules } from "@/lib/empire2";
 import type { Rules } from "@/lib/empire2/types";
-import { CONFIGS, DEFAULT_SEED_BASE, type ConfigSpec, parseRulesOverrides, runIdFor, SENSITIVITY, variantId } from "./config";
+import {
+  BASE_NAMES, baseOverrides, type BaseName, CONFIGS, DEFAULT_SEED_BASE, type ConfigSpec, parseBase, parseRulesOverrides,
+  runIdFor, SENSITIVITY, variantId,
+} from "./config";
 import { computeReport, formatReport, type ReportData } from "./report";
 import { runConfig } from "./runner";
 import type { GameRecord } from "./types";
 
 const USAGE = `Usage: node --import tsx scripts/empire2-sim/run.ts [--config id]... [--gate] [--sensitivity] [--games N]
-  [--seed-base N] [--rules path] [--know P] [--slow P] [--check] [--tuning-log "change | decision"] [--out dir]`;
+  [--seed-base N] [--rules path] [--base ${BASE_NAMES.join("|")}] [--know P] [--slow P] [--check] [--tuning-log "change | decision"] [--out dir]`;
 
 const TUNING_LOG = "docs/empire-2.0/phase2-tuning-log.md";
 const DEFAULT_RULES = "scripts/empire2-sim/rules.json";
@@ -45,6 +48,7 @@ type Args = {
   games: number | null;
   seedBase: number;
   rules: string;
+  base: BaseName;
   know: number | null;
   slow: number | null;
   check: boolean;
@@ -55,7 +59,7 @@ type Args = {
 function parseArgs(argv: string[]): Args {
   const a: Args = {
     configs: [], gate: false, sensitivity: false, games: null, seedBase: DEFAULT_SEED_BASE,
-    rules: DEFAULT_RULES, know: null, slow: null, check: false, tuningLog: null, out: DEFAULT_OUT,
+    rules: DEFAULT_RULES, base: "play", know: null, slow: null, check: false, tuningLog: null, out: DEFAULT_OUT,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -75,6 +79,12 @@ function parseArgs(argv: string[]): Args {
         const p = next();
         if (p === undefined) usage("--rules needs a path.");
         a.rules = p;
+        break;
+      }
+      case "--base": {
+        const b = parseBase(next());
+        if (b === null) usage(`--base needs one of ${BASE_NAMES.join(", ")}.`);
+        a.base = b;
         break;
       }
       case "--know": a.know = probability("--know", next()); break;
@@ -180,7 +190,9 @@ function main(): void {
     process.exit(2);
   }
   const overrides: Partial<Rules> = parsed.overrides;
-  const rules = resolveRules(overrides);
+  // The base first, then the rules file on top. The meta's overrides list only the rules file.
+  const engineOverrides: Partial<Rules> = { ...baseOverrides(a.base), ...overrides };
+  const rules = resolveRules(engineOverrides);
   const specs = selectConfigs(a).map((s) => withOverrides(s, a));
   if (a.tuningLog !== null && a.games !== null) usage("A logged tuning run needs the full game count (drop --games).");
   const outDir = resolve(process.cwd(), a.out);
@@ -193,12 +205,12 @@ function main(): void {
     const t0 = Date.now();
     let records: GameRecord[];
     try {
-      records = runConfig(spec, { seedBase: a.seedBase, rules: overrides, check: a.check });
+      records = runConfig(spec, { seedBase: a.seedBase, rules: engineOverrides, check: a.check });
     } catch (e) {
       console.error(`BUG in ${spec.id}: ${(e as Error).message}`);
       process.exit(3);
     }
-    const meta = { seedBase: a.seedBase, overrides, startedAt, wallSeconds: (Date.now() - t0) / 1000, node: process.version, commit };
+    const meta = { seedBase: a.seedBase, base: a.base, overrides, startedAt, wallSeconds: (Date.now() - t0) / 1000, node: process.version, commit };
     const data = computeReport(records, spec, rules, meta);
     const text = formatReport(data);
     process.stdout.write(text);

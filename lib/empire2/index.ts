@@ -3,7 +3,7 @@ export type { CountryTraits, Empire2Geo } from "./geo-adapter";
 export type { LegalMoves } from "./actions";
 export type { ProtectionReason } from "./protection";
 
-export { EMPIRE2_RULES, resolveRules, regionSetPoints } from "./rules";
+export { EMPIRE2_RULES, EMPIRE2_PLAY_RULES, resolveRules, regionSetPoints } from "./rules";
 export { empire2Geo } from "./geo-adapter";
 export { createGame, legalFootholds, autoSetupPick } from "./setup";
 export { applyAction } from "./engine";

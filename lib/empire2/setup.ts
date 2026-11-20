@@ -13,11 +13,12 @@ const RULE_CHOICES = {
 } as const;
 
 /** The first rule option whose value is not one of its allowed values, or null when all are valid. */
-function invalidRuleKey(rules: Rules): keyof typeof RULE_CHOICES | "territoryPoints" | null {
+function invalidRuleKey(rules: Rules): keyof typeof RULE_CHOICES | "territoryPoints" | "explorerTitle" | null {
   for (const key of Object.keys(RULE_CHOICES) as (keyof typeof RULE_CHOICES)[]) {
     if (!(RULE_CHOICES[key] as readonly unknown[]).includes(rules[key])) return key;
   }
-  return typeof rules.territoryPoints === "boolean" ? null : "territoryPoints";
+  if (typeof rules.territoryPoints !== "boolean") return "territoryPoints";
+  return typeof rules.explorerTitle === "boolean" ? null : "explorerTitle";
 }
 
 /**

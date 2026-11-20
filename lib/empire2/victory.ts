@@ -13,7 +13,7 @@ export function scorePlayer(state: EmpireState, id: PlayerId, geo: Empire2Geo): 
     .filter((c) => c.owner === id)
     .map((c) => ({ region: c.region, points: regionSetPoints(c.size) }));
   const largestEmpire = state.titles.largestEmpire === id ? r.largestEmpirePoints : 0;
-  const explorer = state.titles.explorer === id ? r.explorerPoints : 0;
+  const explorer = state.titles.explorer === id && r.explorerTitle !== false ? r.explorerPoints : 0;
   const total =
     territory + cities + regionSets.reduce((sum, x) => sum + x.points, 0) + largestEmpire + explorer;
   return { territory, cities, regionSets, largestEmpire, explorer, total };

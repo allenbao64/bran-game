@@ -43,6 +43,7 @@ export type Rules = {
   largestEmpirePoints: number;     // 2
   explorerMinContinents: number;   // 4
   explorerPoints: number;          // 2
+  explorerTitle: boolean;          // true  (false: the explorer title is removed: never awarded or held, scores 0)
   winPoints: number;               // 10
   roundCap: number;                // 20
   capitalOffers: number;           // 3

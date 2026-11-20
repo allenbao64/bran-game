@@ -43,13 +43,17 @@ export function computeTitles(state: EmpireState, geo: Empire2Geo): Titles {
     state.titles.largestEmpire,
     sets,
   );
-  const explorer = holderFor(
-    state,
-    (set) => continentsOwned(set, geo),
-    state.rules.explorerMinContinents,
-    state.titles.explorer,
-    sets,
-  );
+  // explorerTitle false (EMPIRE2_PLAY_RULES): nobody is ever the explorer. Only an explicit false turns it off.
+  const explorer =
+    state.rules.explorerTitle === false
+      ? null
+      : holderFor(
+          state,
+          (set) => continentsOwned(set, geo),
+          state.rules.explorerMinContinents,
+          state.titles.explorer,
+          sets,
+        );
   return { largestEmpire: largest, explorer };
 }
 

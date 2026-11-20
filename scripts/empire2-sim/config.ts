@@ -1,5 +1,19 @@
-import { EMPIRE2_RULES } from "@/lib/empire2";
+import { EMPIRE2_PLAY_RULES, EMPIRE2_RULES } from "@/lib/empire2";
 import type { Rules } from "@/lib/empire2/types";
+
+/** The base rules a run starts from (run.ts --base). "play" is EMPIRE2_PLAY_RULES; "default" is EMPIRE2_RULES. */
+export const BASE_NAMES = ["play", "default"] as const;
+export type BaseName = (typeof BASE_NAMES)[number];
+
+/** The base as overrides on top of EMPIRE2_RULES. The default base adds nothing, so its runs are unchanged. */
+export function baseOverrides(base: BaseName): Partial<Rules> {
+  return base === "play" ? { ...EMPIRE2_PLAY_RULES } : {};
+}
+
+/** The base name from a command-line value, or null when it is not one of BASE_NAMES. */
+export function parseBase(value: string | undefined): BaseName | null {
+  return (BASE_NAMES as readonly string[]).includes(value ?? "") ? (value as BaseName) : null;
+}
 
 export const KNOW_P = 0.6;
 export const DEFAULT_SEED_BASE = 0;
@@ -74,6 +88,7 @@ export const OPTION_CHOICES: Record<string, readonly string[] | "boolean"> = {
   turnOrder: ["snake", "clockwise", "rotate", "leaderLast"],
   winCheck: ["endOfTurn", "endOfRound"],
   territoryPoints: "boolean",
+  explorerTitle: "boolean",
   cheapColonize: ["everyStuckTurn", "oncePerGame"],
 };
 

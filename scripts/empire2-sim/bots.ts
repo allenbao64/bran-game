@@ -342,7 +342,9 @@ export function decideTurn(
   }
 
   if (eff === "colonizer") {
+    // Continents are chased for the explorer title only. With the title off, no explore colonize and no explore reserve.
     const explorerNeed =
+      rules.explorerTitle !== false &&
       d.continentsMine < rules.explorerMinContinents &&
       freeCountries(state, geo).some((c) => !d.myContinents.has(geo.continentOf(c)));
     if (d.turnExpands === 0 && canExpand(d, 0)) return expandAction(bestExpand(state, geo, playerId, d, weightsFor(eff), rng));
