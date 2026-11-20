@@ -12,19 +12,22 @@ import { ResultsReplay } from "@/app/replay";
 import { EmpireGame, EmpireResults, type EmpireAction, type EmpireView } from "@/app/empire-game";
 import { claimFitNote, claimRegionNote, TURN_RULES_LINE, DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, LEGACY_TURN_ROUNDS, TURN_ROUND_OPTIONS, TURN_SPEEDS } from "@/lib/turn-rules";
 import { DEFAULT_EMPIRE_TURN_SECONDS, EMPIRE_TURN_SPEEDS } from "@/lib/empire/types";
+import { DEFAULT_EMPIRE2_TURN_SECONDS, EMPIRE2_TURN_SPEEDS, playtestRules, type Empire2Action, type Empire2View } from "@/lib/empire2-playtest";
+import { Empire2Game, Empire2Results } from "@/app/empire2-game";
 
 type Player = { id: string; name: string; host: boolean };
 type Answer = { code: string; name: string };
 type Result = { playerId: string; name: string; guesses: Answer[]; points?: number; bonuses?: { label: string; points: number }[]; bonusTotal?: number; total?: number };
 type Award = { id: string; title: string; playerId: string; detail: string };
-type Mode = "live" | "turns" | "empire";
+type Mode = "live" | "turns" | "empire" | "empire2";
 type Room = { code: string; token: string; gameId: GameId; mode: Mode; turnSeconds?: number; rounds?: number; status: "waiting" | "playing" | "ended"; startedAt: number | null; players: Player[] };
 type Stage = "home" | "lobby" | "game" | "results";
 const ROOM_KEY = "bran-game-room";
 const MODE_RULES: Record<Mode, string> = {
   live: "Everyone names countries at once for ten minutes.",
   turns: TURN_RULES_LINE,
-  empire: "Pick a card, then claim, steal or fortify. First to 15 points."
+  empire: "Pick a card, then claim, steal or fortify. First to 15 points.",
+  empire2: `Expand, build cities and annex rivals. First to ${playtestRules(false).winPoints} points wins.`
 };
 const BUILD_VERSION = process.env.NEXT_PUBLIC_GAME_VERSION ?? "local";
 
@@ -38,7 +41,7 @@ function timeText(seconds: number) {
   const n = Math.max(0, seconds);
   return String(Math.floor(n / 60)).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0");
 }
-const turnSecondsOf = (room: { mode?: string; turnSeconds?: number }) => room.turnSeconds ?? (room.mode === "empire" ? DEFAULT_EMPIRE_TURN_SECONDS : DEFAULT_TURN_SECONDS);
+const turnSecondsOf = (room: { mode?: string; turnSeconds?: number }) => room.turnSeconds ?? (room.mode === "empire2" ? DEFAULT_EMPIRE2_TURN_SECONDS : room.mode === "empire" ? DEFAULT_EMPIRE_TURN_SECONDS : DEFAULT_TURN_SECONDS);
 /** "Host wins", "Host and Brian tie", or "Host and Brian share the win after sudden death". When the host ended the game early (endedEarly), reads "Ended early. Host leads" or "Ended early. Host and Brian are level" and never mentions sudden death. */
 function winnerLine(winners: string[], players: Player[], sudden: boolean, endedEarly: boolean) {
   const names = winners.map((id) => players.find((player) => player.id === id)?.name ?? "Player");
@@ -66,11 +69,15 @@ export default function Home() {
   const [selectedSpeed, setSelectedSpeed] = useState<number>(DEFAULT_TURN_SECONDS);
   const [selectedRounds, setSelectedRounds] = useState<number>(DEFAULT_TURN_ROUNDS);
   const [selectedEmpireSpeed, setSelectedEmpireSpeed] = useState<number>(DEFAULT_EMPIRE_TURN_SECONDS);
+  const [selectedEmpire2Speed, setSelectedEmpire2Speed] = useState<number>(DEFAULT_EMPIRE2_TURN_SECONDS);
+  const [selectedEmpire2Boom, setSelectedEmpire2Boom] = useState(false);
   const [largestGroups, setLargestGroups] = useState<Record<string, string[]>>({});
   const [startCountries, setStartCountries] = useState<Record<string, string>>({});
   const [recentGuesses, setRecentGuesses] = useState<GuessEntry[]>([]);
   const [turn, setTurn] = useState<TurnView | null>(null);
   const [empire, setEmpire] = useState<EmpireView | null>(null);
+  const [empire2, setEmpire2] = useState<Empire2View | null>(null);
+  const [underdogBoom, setUnderdogBoom] = useState<boolean | undefined>(undefined);
   const [scores, setScores] = useState<Record<string, ScoreView>>({});
   const [claimLog, setClaimLog] = useState<ClaimLogEntry[]>([]);
   const [awards, setAwards] = useState<Award[]>([]);
@@ -97,16 +104,18 @@ export default function Home() {
     const data = await api<{
       code: string; gameId?: GameId; mode?: Mode; turnSeconds?: number; rounds?: number; status: Room["status"]; startedAt: number | null;
       players: Player[]; playerId: string; myGuesses: Answer[]; countryClaims?: Record<string, string>; results?: Result[];
-      turn?: TurnView; largestGroups?: Record<string, string[]>; startCountries?: Record<string, string>; recentGuesses?: GuessEntry[]; empire?: EmpireView | null; scores?: Record<string, ScoreView>; claimLog?: ClaimLogEntry[]; awards?: Award[]; winners?: string[];
+      turn?: TurnView; largestGroups?: Record<string, string[]>; startCountries?: Record<string, string>; recentGuesses?: GuessEntry[]; empire?: EmpireView | null; empire2?: Empire2View | null; scores?: Record<string, ScoreView>; claimLog?: ClaimLogEntry[]; awards?: Award[]; winners?: string[];
     }>(`/api/room?code=${encodeURIComponent(code)}`, { headers: { Authorization: `Bearer ${token}` } });
     const gameId = data.gameId ?? "countries";
-    const mode: Mode = data.mode === "turns" || data.mode === "empire" ? data.mode : "live";
+    const mode: Mode = data.mode === "turns" || data.mode === "empire" || data.mode === "empire2" ? data.mode : "live";
     setRoom({ code: data.code, token, gameId, mode, turnSeconds: data.turnSeconds, rounds: data.rounds, status: data.status, startedAt: data.startedAt, players: data.players });
     setSelectedMode(mode); setLargestGroups(data.largestGroups ?? {}); setStartCountries(data.startCountries ?? {}); setRecentGuesses(data.recentGuesses ?? []);
     if (data.turn) { setTurn(data.turn); setSkewMs(data.turn.serverNow - Date.now()); }
     else setTurn(null);
     if (data.empire) { setEmpire(data.empire); setSkewMs(data.empire.serverNow - Date.now()); }
     else setEmpire(null);
+    if (data.empire2) { setEmpire2(data.empire2); setSkewMs(data.empire2.serverNow - Date.now()); setUnderdogBoom(data.empire2.underdogBoomPick); }
+    else setEmpire2(null);
     setScores(data.scores ?? {}); setClaimLog(data.claimLog ?? []); setAwards(data.awards ?? []); setWinners(data.winners ?? []);
     setSelectedGame(gameId); setPlayers(data.players); setPlayerId(data.playerId); setGuesses(data.myGuesses); setCountryClaims(data.countryClaims ?? {});
     if (data.status === "ended") { setResults(data.results ?? []); setStage("results"); }
@@ -127,7 +136,7 @@ export default function Home() {
     if (!room || (stage !== "lobby" && stage !== "game")) return;
     const id = window.setInterval(() => {
       void sync(room.code, room.token).catch((error) => setNotice(errorText(error)));
-    }, room.mode === "turns" || room.mode === "empire" ? 800 : 1600);
+    }, room.mode === "turns" || room.mode === "empire" || room.mode === "empire2" ? 800 : 1600);
     return () => window.clearInterval(id);
   }, [room?.code, room?.token, room?.mode, stage, sync]);
 
@@ -161,15 +170,15 @@ export default function Home() {
         startedAt: number | null; players: Player[];
       }>("/api/room", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, name: name.trim(), code, ...(action === "create" ? { gameId: selectedGame, ...(selectedGame === "countries" ? { mode: selectedMode, ...(selectedMode === "turns" ? { turnSeconds: selectedSpeed, rounds: selectedRounds } : selectedMode === "empire" ? { turnSeconds: selectedEmpireSpeed } : {}) } : {}) } : {}) })
+        body: JSON.stringify({ action, name: name.trim(), code, ...(action === "create" ? { gameId: selectedGame, ...(selectedGame === "countries" ? { mode: selectedMode, ...(selectedMode === "turns" ? { turnSeconds: selectedSpeed, rounds: selectedRounds } : selectedMode === "empire" ? { turnSeconds: selectedEmpireSpeed } : selectedMode === "empire2" ? { turnSeconds: selectedEmpire2Speed, underdogBoomPick: selectedEmpire2Boom } : {}) } : {}) } : {}) })
       });
       const gameId = data.gameId ?? "countries";
       const session = { ...data, name: name.trim() };
       localStorage.setItem(ROOM_KEY, JSON.stringify(session));
       setJoinCode(data.code);
-      const mode: Mode = data.mode === "turns" || data.mode === "empire" ? data.mode : "live";
+      const mode: Mode = data.mode === "turns" || data.mode === "empire" || data.mode === "empire2" ? data.mode : "live";
       const nextRoom: Room = { code: data.code, token: data.token, gameId, mode, turnSeconds: data.turnSeconds, rounds: data.rounds, status: data.status, startedAt: data.startedAt, players: data.players };
-      setRoom(nextRoom); setSelectedGame(gameId); setSelectedMode(mode); setTurn(null); setLargestGroups({}); setStartCountries({}); setRecentGuesses([]); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setWinners([]); setPlayers(data.players); setPlayerId(data.playerId); setGuesses([]); setResults([]); setCountryClaims({});
+      setRoom(nextRoom); setSelectedGame(gameId); setSelectedMode(mode); setUnderdogBoom(action === "create" && mode === "empire2" ? selectedEmpire2Boom : undefined); setEmpire2(null); setTurn(null); setLargestGroups({}); setStartCountries({}); setRecentGuesses([]); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setWinners([]); setPlayers(data.players); setPlayerId(data.playerId); setGuesses([]); setResults([]); setCountryClaims({});
       setStage(data.status === "playing" ? "game" : "lobby");
     } catch (error) { setNotice(errorText(error)); }
     finally { busyRef.current = false; setBusy(false); }
@@ -185,13 +194,13 @@ export default function Home() {
       });
       const nextRoom: Room = { ...room, status: data.status, startedAt: data.startedAt, players: data.players };
       setRoom(nextRoom); setPlayers(data.players); setLeft(gameConfig(room.gameId).durationSeconds);
-      if (room.mode === "turns" || room.mode === "empire") await sync(room.code, room.token); else setStage("game");
+      if (room.mode === "turns" || room.mode === "empire" || room.mode === "empire2") await sync(room.code, room.token); else setStage("game");
     } catch (error) { setNotice(errorText(error)); }
     finally { busyRef.current = false; setBusy(false); }
   }
 
   async function endRound() {
-    const question = room?.mode === "turns" || room?.mode === "empire" ? "End the game now and show the results?" : "End the round now and reveal everyone’s answers?";
+    const question = room?.mode === "turns" || room?.mode === "empire" || room?.mode === "empire2" ? "End the game now and show the results?" : "End the round now and reveal everyone’s answers?";
     if (!room || busyRef.current || !window.confirm(question)) return;
     busyRef.current = true; setBusy(true); setNotice("");
     try {
@@ -260,9 +269,40 @@ export default function Home() {
     finally { busyRef.current = false; setBusy(false); }
   }
 
+  async function empire2Action(action: Empire2Action): Promise<boolean> {
+    if (!room || busyRef.current) return false;
+    busyRef.current = true; setBusy(true); setNotice("");
+    try {
+      await api("/api/empire2", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: room.code, token: room.token, action })
+      });
+      await sync(room.code, room.token);
+      return true;
+    } catch (error) { setNotice(errorText(error)); return false; }
+    finally { busyRef.current = false; setBusy(false); }
+  }
+
+  /** Saves the room's Empire 2.0 log (members only) as a JSON file named by room code and date. */
+  async function downloadLog() {
+    if (!room) return;
+    try {
+      const response = await fetch(`/api/empire2?code=${encodeURIComponent(room.code)}`, { headers: { Authorization: `Bearer ${room.token}` } });
+      if (!response.ok) throw new Error("The log is not available.");
+      const url = URL.createObjectURL(new Blob([await response.text()], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `empire2-${room.code}-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { setNotice("Could not download the log. Try again."); }
+  }
+
   function leaveRoom() {
     localStorage.removeItem(ROOM_KEY);
-    setStage("home"); setRoom(null); setTurn(null); setLargestGroups({}); setStartCountries({}); setRecentGuesses([]); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setWinners([]); setPlayers([]); setGuesses([]); setResults([]); setCountryClaims({}); setNotice(""); setClaimNote(null); setEntry("");
+    setStage("home"); setRoom(null); setEmpire2(null); setUnderdogBoom(undefined); setTurn(null); setLargestGroups({}); setStartCountries({}); setRecentGuesses([]); setEmpire(null); setScores({}); setClaimLog([]); setAwards([]); setWinners([]); setPlayers([]); setGuesses([]); setResults([]); setCountryClaims({}); setNotice(""); setClaimNote(null); setEntry("");
   }
 
   const ready = Boolean(name.trim());
@@ -272,8 +312,9 @@ export default function Home() {
   const isCountries = activeGame.id === "countries";
   const isTurns = room?.mode === "turns" && isCountries;
   const isEmpire = room?.mode === "empire" && isCountries;
+  const isEmpire2 = room?.mode === "empire2" && isCountries;
   const noteText = claimNote && turn && !turn.finished && turn.number > claimNote.turn && turn.number < claimNote.turn + players.length && turn.currentPlayerId !== playerId ? claimNote.text : "";
-  const modeLabel = (mode: Mode) => (mode === "turns" ? "Turn-based" : mode === "empire" ? "Empire" : "Live race");
+  const modeLabel = (mode: Mode) => (mode === "turns" ? "Turn-based" : mode === "empire" ? "Empire" : mode === "empire2" ? "Empire 2.0 (playtest)" : "Live race");
   const modeRules = (mode: Mode) => MODE_RULES[mode];
 
   return <main className="shell">
@@ -300,9 +341,13 @@ export default function Home() {
           <button type="button" className={`mode-option${selectedMode === "live" ? " selected" : ""}`} aria-pressed={selectedMode === "live"} onClick={() => setSelectedMode("live")}><b>Live race</b><small>{MODE_RULES.live}</small></button>
           <button type="button" className={`mode-option${selectedMode === "turns" ? " selected" : ""}`} aria-pressed={selectedMode === "turns"} onClick={() => setSelectedMode("turns")}><b>Turn-based</b><small>{MODE_RULES.turns}</small></button>
           <button type="button" className={`mode-option${selectedMode === "empire" ? " selected" : ""}`} aria-pressed={selectedMode === "empire"} onClick={() => setSelectedMode("empire")}><b>Empire</b><small>{MODE_RULES.empire}</small></button>
-        </div>{(selectedMode === "turns" || selectedMode === "empire") && <div role="group" aria-label="Choose a turn speed"><span className="mode-label">TURN SPEED</span><div className="speed-picker">
-          {(selectedMode === "empire" ? EMPIRE_TURN_SPEEDS : TURN_SPEEDS).map((speed) => { const chosen = selectedMode === "empire" ? selectedEmpireSpeed : selectedSpeed; return <button type="button" className={`speed-option${chosen === speed.seconds ? " selected" : ""}`} key={speed.id} aria-pressed={chosen === speed.seconds} onClick={() => selectedMode === "empire" ? setSelectedEmpireSpeed(speed.seconds) : setSelectedSpeed(speed.seconds)}><b>{speed.label}</b><small>{speed.seconds} SECONDS</small></button>; })}
-        </div></div>}{selectedMode === "turns" && <div role="group" aria-label="Choose the number of rounds"><span className="mode-label">ROUNDS</span><div className="speed-picker">
+          <button type="button" className={`mode-option${selectedMode === "empire2" ? " selected" : ""}`} aria-pressed={selectedMode === "empire2"} onClick={() => setSelectedMode("empire2")}><b>Empire 2.0 (playtest)</b><small>{MODE_RULES.empire2}</small></button>
+        </div>{(selectedMode === "turns" || selectedMode === "empire" || selectedMode === "empire2") && <div role="group" aria-label="Choose a turn speed"><span className="mode-label">TURN SPEED</span><div className="speed-picker">
+          {(selectedMode === "empire2" ? EMPIRE2_TURN_SPEEDS : selectedMode === "empire" ? EMPIRE_TURN_SPEEDS : TURN_SPEEDS).map((speed) => { const chosen = selectedMode === "empire2" ? selectedEmpire2Speed : selectedMode === "empire" ? selectedEmpireSpeed : selectedSpeed; return <button type="button" className={`speed-option${chosen === speed.seconds ? " selected" : ""}`} key={speed.id} aria-pressed={chosen === speed.seconds} onClick={() => selectedMode === "empire2" ? setSelectedEmpire2Speed(speed.seconds) : selectedMode === "empire" ? setSelectedEmpireSpeed(speed.seconds) : setSelectedSpeed(speed.seconds)}><b>{speed.label}</b><small>{speed.seconds} SECONDS</small></button>; })}
+        </div></div>}{selectedMode === "empire2" && <div role="group" aria-label="Choose whether the underdog picks a boom"><span className="mode-label">UNDERDOG PICKS A BOOM</span><div className="speed-picker e2-two">
+          <button type="button" className={`speed-option${!selectedEmpire2Boom ? " selected" : ""}`} aria-pressed={!selectedEmpire2Boom} onClick={() => setSelectedEmpire2Boom(false)}><b>Off</b></button>
+          <button type="button" className={`speed-option${selectedEmpire2Boom ? " selected" : ""}`} aria-pressed={selectedEmpire2Boom} onClick={() => setSelectedEmpire2Boom(true)}><b>On</b></button>
+        </div><small className="e2-hint">The player with the fewest points picks one of this round&apos;s boom regions.</small></div>}{selectedMode === "turns" && <div role="group" aria-label="Choose the number of rounds"><span className="mode-label">ROUNDS</span><div className="speed-picker">
           {TURN_ROUND_OPTIONS.map((rounds) => <button type="button" className={`speed-option${selectedRounds === rounds ? " selected" : ""}`} key={rounds} aria-pressed={selectedRounds === rounds} onClick={() => setSelectedRounds(rounds)}><b>{rounds}</b><small>ROUNDS</small></button>)}
         </div></div>}</div>}
         <label htmlFor="name">DISPLAY NAME</label><input id="name" className="field" maxLength={18} placeholder="Your name" value={name} onChange={(event) => setName(event.target.value)}/>
@@ -310,16 +355,18 @@ export default function Home() {
         <div className="or">OR</div><form onSubmit={(event) => void startRoom(event, "join")}><label htmlFor="room">ROOM CODE</label><div className="join-row"><input id="room" className="field code" maxLength={6} placeholder="ABC123" value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())}/><button className="join" disabled={!ready || joinCode.trim().length !== 6 || busy}>Join</button></div></form>
         {notice && <p className="notice">{notice}</p>}</div>
     </div>}
-    {stage === "lobby" && room && <div className="panel"><h1>{activeGame.title}</h1>{isCountries && <p className="mode-tag">{modeLabel(room.mode)}{room.mode !== "live" && ` · ${turnSecondsOf(room)}s turns`}{room.mode === "turns" && ` · ${room.rounds ?? LEGACY_TURN_ROUNDS} rounds`}</p>}<p className="lede">{isCountries ? modeRules(room.mode) : activeGame.rules}</p><button className="room-code" aria-label={`Copy room code ${room.code}`} onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}<small>Copy</small></button>
-      <div className="roster">{[0,1,2].map((index) => { const player = players[index]; return <div className="player" key={index}><span>0{index + 1}</span>{player && <i className="player-dot" style={{ background: colorOf(player.id) }}/>}<b>{player?.name ?? "Open seat"}</b></div>; })}</div>
-      {players.length === 1 && <p className="waiting">Waiting for another player.</p>}{players.length === 2 && <p className="waiting">A third player can still join.</p>}
+    {stage === "lobby" && room && <div className="panel"><h1>{activeGame.title}</h1>{isCountries && <p className="mode-tag">{modeLabel(room.mode)}{room.mode !== "live" && ` · ${turnSecondsOf(room)}s turns`}{room.mode === "turns" && ` · ${room.rounds ?? LEGACY_TURN_ROUNDS} rounds`}{room.mode === "empire2" && underdogBoom && " · Underdog picks a boom"}</p>}<p className="lede">{isCountries ? modeRules(room.mode) : activeGame.rules}</p><button className="room-code" aria-label={`Copy room code ${room.code}`} onClick={() => void navigator.clipboard?.writeText(room.code)}>{room.code}<small>Copy</small></button>
+      {room.mode === "empire2" && <div className="aside-title">PLAYERS <b>{players.length}/4</b></div>}<div className="roster">{(room.mode === "empire2" ? [0,1,2,3] : [0,1,2]).map((index) => { const player = players[index]; return <div className="player" key={index}><span>0{index + 1}</span>{player && <i className="player-dot" style={{ background: colorOf(player.id) }}/>}<b>{player?.name ?? "Open seat"}</b></div>; })}</div>
+      {players.length === 1 && <p className="waiting">Waiting for another player.</p>}{players.length === 2 && <p className="waiting">{room.mode === "empire2" ? "Up to four players. Start when everyone has joined." : "A third player can still join."}</p>}{room.mode === "empire2" && players.length === 3 && <p className="waiting">Up to four players. Start when everyone has joined.</p>}
       {players.find((player) => player.id === playerId)?.host && <button className="primary" disabled={players.length < 2 || busy} onClick={() => void startRound()}>Start</button>}
       <button className="quiet" onClick={leaveRoom}>Leave room</button>{notice && <p className="notice">{notice}</p>}</div>}
     {stage === "game" && room && isTurns && turn && <TurnsGame turn={turn} scores={scores} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} entry={entry} onEntry={setEntry} notice={notice} busy={busy} onSubmit={submitGuess} onPass={() => void passTurn()} onEnd={() => void endRound()} colorOf={colorOf} largestGroups={largestGroups} claimNote={noteText} startCountries={startCountries} recentGuesses={recentGuesses}/>}
     {stage === "game" && room && isTurns && !turn && <p className="lede">Dealing the first card…</p>}
     {stage === "game" && room && isEmpire && empire && <EmpireGame view={empire} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} notice={notice} busy={busy} onAction={empireAction} onNotice={setNotice} onEnd={() => void endRound()} colorOf={colorOf}/>}
     {stage === "game" && room && isEmpire && !empire && <p className="lede">Placing capitals…</p>}
-    {stage === "game" && room && !isTurns && !isEmpire && <div className="game"><section><div className="game-head"><h1>{activeGame.title}</h1><div className={left < 30 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div>
+    {stage === "game" && room && isEmpire2 && empire2 && <Empire2Game view={empire2} players={players} playerId={playerId} skewMs={skewMs} notice={notice} busy={busy} onAction={empire2Action} onNotice={setNotice} onEnd={() => void endRound()}/>}
+    {stage === "game" && room && isEmpire2 && !empire2 && <p className="lede">Starting the game…</p>}
+    {stage === "game" && room && !isTurns && !isEmpire && !isEmpire2 && <div className="game"><section><div className="game-head"><h1>{activeGame.title}</h1><div className={left < 30 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div>
       {room.gameId === "countries" && <div className="live-map"><WorldMap claims={countryClaims} players={players} youId={playerId}/>
         <div className="continent-chips" aria-label="Countries left by continent">{continentCounts(countryClaims).map((continent) => <span key={continent.name} className={continent.left ? "continent-chip" : "continent-chip done"}>{continent.name} <b>{continent.left ? `${continent.left} left` : "done"}</b></span>)}</div></div>}
       <form className="guess-form" onSubmit={submitGuess}><input ref={input} className="field" placeholder={activeGame.inputPlaceholder} value={entry} onChange={(event) => setEntry(event.target.value)} readOnly={busy} disabled={left <= 0}/><button className="primary" disabled={!entry.trim() || left <= 0 || busy}>Claim</button></form>
@@ -336,7 +383,9 @@ export default function Home() {
       <ResultsReplay claimLog={claimLog} players={players} youId={playerId}/>
       <button className="primary" onClick={leaveRoom}>Back to lobby</button></div>}
     {stage === "results" && room && isEmpire && <EmpireResults view={empire} players={players} playerId={playerId} claimLog={claimLog} colorOf={colorOf} onLeave={leaveRoom}/>}
-    {stage === "results" && room && !isTurns && !isEmpire && <div className="panel results"><h1>Results</h1><div className="board">{sortedResults.map((result, index) => <article key={result.playerId} style={{ borderLeft: `4px solid ${colorOf(result.playerId)}`, paddingLeft: 12 }}><small>{["1ST","2ND","3RD"][index]}</small><b>{result.name}{result.playerId === playerId ? " · YOU" : ""}</b><strong>{result.guesses.length}<small>{activeGame.answerLabel}</small></strong><div className="chips">{result.guesses.map((guess) => <span key={guess.code}>{guess.name}</span>)}</div></article>)}</div><button className="primary" onClick={leaveRoom}>Back to lobby</button></div>}
+    {stage === "results" && room && isEmpire2 && empire2 && <Empire2Results view={empire2} players={players} playerId={playerId} onDownloadLog={() => void downloadLog()} onLeave={leaveRoom} notice={notice}/>}
+    {stage === "results" && room && isEmpire2 && !empire2 && <div className="panel results"><h1>Results</h1><button className="primary" onClick={leaveRoom}>Back to lobby</button></div>}
+    {stage === "results" && room && !isTurns && !isEmpire && !isEmpire2 && <div className="panel results"><h1>Results</h1><div className="board">{sortedResults.map((result, index) => <article key={result.playerId} style={{ borderLeft: `4px solid ${colorOf(result.playerId)}`, paddingLeft: 12 }}><small>{["1ST","2ND","3RD"][index]}</small><b>{result.name}{result.playerId === playerId ? " · YOU" : ""}</b><strong>{result.guesses.length}<small>{activeGame.answerLabel}</small></strong><div className="chips">{result.guesses.map((guess) => <span key={guess.code}>{guess.name}</span>)}</div></article>)}</div><button className="primary" onClick={leaveRoom}>Back to lobby</button></div>}
 </section>
   </main>;
 }

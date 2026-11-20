@@ -7,10 +7,10 @@ import { playerColor } from "@/lib/player-colors";
 
 type MapPlayer = { id: string; name: string };
 /** `targets` are country codes to mark with a dashed outline (what the viewer can steal). `highlight` outlines a set of countries, e.g. a region the viewer is looking at. `homes` maps a player id to their starting country, drawn as a house marker. `emphasis` maps a player id to the country codes to outline thickly in that player's colour (their largest territory). */
-type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[]; highlight?: string[]; homes?: Record<string, string> };
+type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[]; highlight?: string[]; homes?: Record<string, string>; cities?: string[] };
 
-/** A shared board: every claimed country is filled with its owner's colour. */
-export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets, highlight, homes }: WorldMapProps) {
+/** A shared board: every claimed country is filled with its owner's colour. `cities` marks each listed country with a small square (countries without a map point are skipped). */
+export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets, highlight, homes, cities }: WorldMapProps) {
   const marked = useMemo(() => (targets ? new Set(targets) : undefined), [targets]);
   const lit = useMemo(() => new Set(highlight ?? []), [highlight]);
   const ids = useMemo(() => players.map((player) => player.id), [players]);
@@ -144,6 +144,12 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
         return at && <g key={`home-${owner}`} className="map-home" transform={`translate(${at[0]} ${at[1]}) scale(${1 / view.k})`}>
           <circle r="6.5" fill="#fff" stroke={color} strokeWidth="2.2"/><text y="3.4" textAnchor="middle" fontSize="9" fill={color}>⌂</text>
           <title>{`${names.get(owner) ?? "A player"}${owner === youId ? " (you)" : ""} started here`}</title>
+        </g>;
+      })}
+      {(cities ?? []).map((code) => {
+        const at = homePoints[code];
+        return at && <g key={`city-${code}`} transform={`translate(${at[0]} ${at[1]}) scale(${1 / view.k})`}>
+          <rect className="map-city" x="-3" y="-3" width="6" height="6" fill="#222" stroke="#fff" strokeWidth="1.2"><title>City</title></rect>
         </g>;
       })}
       </g>

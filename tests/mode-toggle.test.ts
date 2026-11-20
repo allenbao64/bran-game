@@ -58,7 +58,7 @@ test("the mode toggle only shows for Country Sprint and live is the default", ()
   act(() => button("Overwatch Hero Sprint", ".game-option")!.click());
   assert.equal(doc.querySelectorAll(".mode-option").length, 0);
   act(() => button("Country Sprint", ".game-option")!.click());
-  assert.equal(doc.querySelectorAll(".mode-option").length, 3, "live, turn-based and empire");
+  assert.equal(doc.querySelectorAll(".mode-option").length, 4, "live, turn-based, empire and empire 2.0 (playtest)");
 
   act(() => button("Turn-based", ".mode-option")!.click());
   assert.equal(button("Turn-based", ".mode-option")!.getAttribute("aria-pressed"), "true");
