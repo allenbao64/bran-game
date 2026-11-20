@@ -176,6 +176,32 @@ test("a timed-out pick uses bestBoomPick, and the round goes on", () => {
   assert.equal(next.phase, "play");
 });
 
+test("boom region count 0: the pick is recorded and no region booms", () => {
+  // createGame rejects boomRegionCount 0, so the state is built directly; the round-2 pick opens at the round end.
+  let s = buildPlayState({
+    geo: miniGeo,
+    rules: { underdogBoomPick: true, boomRegionCount: 0 },
+    round: 1,
+    players: [
+      { id: "p0", owned: ["A1", "A2", "A3", "A4", "A5", "A6", "B1", "B2"], influence: 9 },
+      { id: "p1", owned: ["G1", "G2"], influence: 9 },
+    ],
+  });
+  const ctx = (now: number) => ctxAt(miniGeo, now, mulberry32(23));
+  s = ok(applyAction(s, "p0", { type: "endTurn" }, ctx(500)));
+  s = ok(applyAction(s, "p1", { type: "endTurn" }, ctx(600)));
+  assert.equal(s.round, 2);
+  assert.equal(s.turn, null, "the pick is open");
+  assert.equal(s.boomPick?.playerId, "p1");
+  const picked = ok(applyAction(s, "p1", { type: "pickBoom", region: "Gamma East" }, ctx(800)));
+  assert.equal(picked.boomPick?.region, "Gamma East", "the pick is recorded");
+  assert.equal(picked.boomPick?.by, "player");
+  assert.deepEqual(picked.booms, [], "no region booms with boomRegionCount 0");
+  assert.equal(picked.log.filter((e) => e.type === "boomPick" && e.note === "Gamma East").length, 1, "the pick is logged");
+  assert.equal(picked.turn?.playerId, "p1", "the round's first turn starts");
+  assertInvariants(s, picked, miniGeo, newTrackers());
+});
+
 test("bestBoomPick prefers the picker's city, then the most countries, then the alphabetical region", () => {
   const withCity = buildPlayState({
     geo: miniGeo,
@@ -204,7 +230,7 @@ test("bestBoomPick prefers the picker's city, then the most countries, then the 
     rules: { boomIncome: 0, boomCityIncome: 0 },
     players: [{ id: "p0", owned: ["B4"] }, { id: "p1" }],
   });
-  assert.equal(bestBoomPick(zero, "p0", miniGeo), "Beta West", "all payouts 0: first region the picker borders but does not own in");
+  assert.equal(bestBoomPick(zero, "p0", miniGeo), "Beta East", "first region that borders the picker's empire (B4 is in Beta East, next to B5)");
 
   const none = buildPlayState({ geo: miniGeo, round: 2, rules: { boomIncome: 0, boomCityIncome: 0 }, players: [{ id: "p0" }, { id: "p1" }] });
   assert.equal(bestBoomPick(none, "p0", miniGeo), "Alpha East", "no borders at all: the alphabetically first region");

@@ -397,7 +397,8 @@ export function assertInvariants(before: EmpireState, after: EmpireState, geo: E
     const pick = after.boomPick;
     assert.equal(pick.playerId, boomPickerId(after), "picker is not the lowest snapshot VP in turn order");
     if (pick.region !== null) {
-      assert.ok(after.booms.includes(pick.region), "the picked region is not one of the booms");
+      // With boomRegionCount 0 no region booms, so the picked region is not in the (empty) booms list.
+      if (rules.boomRegionCount >= 1) assert.ok(after.booms.includes(pick.region), "the picked region is not one of the booms");
       assert.equal(after.booms.length, Math.min(rules.boomRegionCount, geo.regionNames().length), "boom count");
       assert.deepEqual(after.booms, [...new Set(after.booms)].sort(), "booms not distinct and sorted");
     }

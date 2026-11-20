@@ -34,8 +34,8 @@ function boomPayout(state: EmpireState, playerId: PlayerId, region: string, geo:
 /**
  * The engine's and the bots' boom pick (deterministic, no rng). Maximises the picker's own boom payout this round;
  * ties go to the region where the picker owns the most countries, then to the alphabetically first region.
- * If every region pays 0, it takes the alphabetically first region with no country of the picker's that borders
- * the picker's empire, else the alphabetically first region.
+ * If every region pays 0, it takes the alphabetically first region that borders the picker's empire, else the
+ * alphabetically first region.
  */
 export function bestBoomPick(state: EmpireState, playerId: PlayerId, geo: Empire2Geo): string {
   const regions = [...geo.regionNames()].sort();
@@ -61,6 +61,6 @@ export function bestBoomPick(state: EmpireState, playerId: PlayerId, geo: Empire
   const mine = new Set(owned);
   const borders = (region: string) =>
     geo.regionMembers(region).some((m) => geo.neighbours(m).some((n) => mine.has(n)));
-  const fallback = regions.find((r) => ownedCount(r) === 0 && borders(r));
+  const fallback = regions.find((r) => borders(r));
   return fallback ?? regions[0];
 }

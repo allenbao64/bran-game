@@ -77,8 +77,11 @@ export function applyBoomPick(
   const pick = state.boomPick;
   if (pick === undefined || pick.region !== null) throw new Error("applyBoomPick: no pick is pending");
   const geo = ctx.geo;
-  const rest = drawBoomsExcept(ctx.rng, geo, state.rules.boomRegionCount - 1, region);
-  let s = patchState(state, { booms: [region, ...rest].sort(), boomPick: { ...pick, region, by } });
+  const count = state.rules.boomRegionCount;
+  // With boomRegionCount 0 no region booms: the pick is still recorded, and no rng is drawn for the other booms.
+  const rest = count > 0 ? drawBoomsExcept(ctx.rng, geo, count - 1, region) : [];
+  const booms = count > 0 ? [region, ...rest].sort() : [];
+  let s = patchState(state, { booms, boomPick: { ...pick, region, by } });
   s = appendLog(s, { type: "boomPick", round: s.round, playerId: pick.playerId, note: region, auto: by === "timeout" });
   const bounties = drawBounties(ctx.rng, geo, freeCountries(s, geo), s.round, s.rules);
   s = patchState(s, { bounties });
