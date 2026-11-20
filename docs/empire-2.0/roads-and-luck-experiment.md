@@ -30,7 +30,7 @@ Baseline: the play rules with the tuned numbers. Every arm starts from this file
 
 Configs: `real-3p-pure` and `real-4p-pure` (the strategy question) and `real-3p-mixed` (mixed play, closer to people).
 
-Games: 1,000 per arm per config, so 15 runs. Every arm uses seed base 0, so all arms play the same 1,000 seeds. Differences between arms come from the rules, not from the luck of the seeds.
+Games: 1,000 per arm per config, so 15 runs. Every arm uses seed base 0, so all arms play the same 1,000 seeds. Same seeds remove differences in starting positions and lineups, but games diverge after the first rule-dependent event, so sampling noise remains.
 
 Step 1 (settable values): the engine reads all three keys from the rules at every use. `maxCities` is read in `lib/empire2/actions.ts` and `lib/empire2/victory.ts`, and the bots read it in `scripts/empire2-sim/bots.ts`. `largestEmpirePoints` is read in `lib/empire2/victory.ts`. `boomRegionCount` is read in `lib/empire2/turns.ts` and passed to `drawBooms` in `lib/empire2/economy.ts`. In `scripts/empire2-sim/config.ts`:
 
@@ -58,6 +58,14 @@ So differences of about 10 points or more are clear. Differences under about 5 p
 - C1, C4 and C5 come from the simulator's report. C4 is last place at round 6 wins. C5 is a leader change after round 5. C1 is average rounds.
 - Leader holds: the share of games won by the player who led at the start of round 6, counting only games with one leader and at least six rounds.
 - Differences use the same formula as the proportions: difference plus or minus 1.96 times the square root of p1(1-p1)/n1 plus p2(1-p2)/n2. ROADS and SPREAD are counts or differences of maxima, so their intervals come from 2,000 bootstrap resamples of games. C1 uses the standard error of the mean from the game records.
+
+### Pairing, multiple tests and round-6 subsets
+
+The difference intervals treat the two arms as independent, so they are conservative. Every arm plays the same seeds, so the games are paired. Measured paired half-widths for the colonizer win rate on `real-3p-pure` are 3.9 points for arm B (against about 5.0 unpaired), 4.2 for arm A (against 5.0), 4.1 for arm D (against 5.0) and 2.8 for arm C (against 5.0).
+
+About 60 difference tests per config were run with no multiplicity correction: 56 in each pure config and 44 in `real-3p-mixed`. Some intervals will exclude 0 by chance. The winPoints 16 runs in step 4 were chosen after seeing the first results.
+
+C4 and "leader at start of round 6 wins" use only games that reach round 6. C4 also skips games where every seat is tied at the start of round 6. Games ending before round 6 were: `real-3p-pure`, 0 (baseline), 1 (A), 1 (B), 0 (C) and 106 (D); `real-4p-pure`, 108 for D; `real-3p-mixed`, 115 for D. So arm D's round-6 metrics come from a different subset of games, and its C5 fall is partly because games are shorter.
 
 ## Results
 
@@ -189,7 +197,7 @@ Step 4 applied because arms A, B and D gave a SIGNIFICANT drop in SPREAD on `rea
 | B empire road | 14 | 3 | 40.5% | 11.75 | 15.8% | 84.3% | 47.5% | 38.0% | 45.9% | 44.9% | 5.5% |
 | B empire road | 16 | 3 | 42.1% | 14.72 | 18.6% | 87.8% | 43.7% | 47.6% | 39.1% | 42.2% | 5.5% |
 | D combined | 14 | 3 | 45.4% | 9.04 | 12.5% | 69.1% | 55.0% | 39.1% | 44.4% | 48.1% | 2.7% |
-| D combined | 16 | 3 | 44.0% | 12.00 | 10.5% | 81.0% | 52.7% | 42.5% | 46.5% | 43.0% | 2.5% |
+| D combined | 16 | 3 | 44.0% | 12.00 FAIL | 10.5% | 81.0% | 52.7% | 42.5% | 46.5% | 43.0% | 2.5% |
 
 Differences at winPoints 16, against the winPoints 16 baseline control (95% CI; SIGNIFICANT when the interval excludes 0):
 
@@ -201,23 +209,70 @@ Differences at winPoints 16, against the winPoints 16 baseline control (95% CI; 
 
 Reading the table: the arm-at-14 and arm-at-16 rows are both shown. The difference column compares each arm at 16 with the baseline at 16.
 
+## Many-roads measures
+
+Computed from the per-strategy win rates and win counts in each run's report. The city-building strategies are cityBuilder, colonizer and annexer.
+
+- Max-min: the highest minus the lowest win rate among the three, in points.
+- Within 10: how many of the three are within 10 points of the top (the top counts).
+- Effective number: 1 divided by the sum of squared shares of their wins. Three equal winners give 3. One winner gives 1.
+
+| Players | Measure | Baseline | A city road | B empire road | C luck booms | D combined |
+|---|---|---|---|---|---|---|
+| 3 | Max-min (pts) | 27.7 | 8.8 | 7.9 | 29.0 | 9.0 |
+| 3 | Within 10 (of 3) | 1 | 3 | 3 | 1 | 3 |
+| 3 | Effective number | 2.76 | 2.98 | 2.98 | 2.74 | 2.98 |
+| 4 | Max-min (pts) | 36.3 | 13.1 | 10.9 | 36.9 | 6.2 |
+| 4 | Within 10 (of 3) | 1 | 1 | 2 | 1 | 3 |
+| 4 | Effective number | 2.37 | 2.90 | 2.94 | 2.42 | 2.98 |
+
+ROADS cannot exceed 3 at 3 players. The expander would need a 25% win rate per appearance to count, and its highest rate is 5.6% (arm C). The baseline 3-player max-min is 27.7 from unrounded rates. The rounded table gives 27.8.
+
+## Gate results from the simulator
+
+Read from the checks table in each run's report. The gated checks are C1 (12 to 16 rounds; reported only at 4 players), C2 (top strategy at 40% or less), C3 (worst seat deviation of 5 points or less), C4 (15% or more) and C5 (95% or more). C2 is not checked in `real-3p-mixed`. A config passes only when every gated check passes.
+
+| Config | Arm | Gate | Failed checks |
+|---|---|---|---|
+| real-3p-pure | Baseline | FAIL | C2, C4, C5 |
+| real-3p-pure | A city road | FAIL | C1, C2, C4, C5 |
+| real-3p-pure | B empire road | FAIL | C1, C2, C5 |
+| real-3p-pure | C luck booms | FAIL | C2, C4, C5 |
+| real-3p-pure | D combined | FAIL | C1, C2, C4, C5 |
+| real-4p-pure | Baseline | FAIL | C2, C4, C5 |
+| real-4p-pure | A city road | FAIL | C2, C4, C5 |
+| real-4p-pure | B empire road | FAIL | C4, C5 |
+| real-4p-pure | C luck booms | FAIL | C2, C4, C5 |
+| real-4p-pure | D combined | FAIL | C4, C5 |
+| real-3p-mixed | Baseline | FAIL | C3 |
+| real-3p-mixed | A city road | FAIL | C1, C5 |
+| real-3p-mixed | B empire road | FAIL | C1 |
+| real-3p-mixed | C luck booms | PASS | none |
+| real-3p-mixed | D combined | FAIL | C1, C5 |
+| real-3p-pure, winPoints 16 | Baseline | FAIL | C1, C2, C5 |
+| real-3p-pure, winPoints 16 | A city road | FAIL | C2, C4, C5 |
+| real-3p-pure, winPoints 16 | B empire road | FAIL | C2, C5 |
+| real-3p-pure, winPoints 16 | D combined | FAIL | C1, C2, C4, C5 |
+
+C2 cannot pass at 3 players with these bots. The expander builds no cities, so the other three strategies win most games. Pooled, they win about 43% of their seats in arm C, where the expander wins the most games (4.3% of games, 43 of 1,000). C2 needs 40% or less, so the expander would need to win about 11% of games. No arm comes close.
+
 ## Findings
 
 - At 3 players, ROADS is 3 in every arm: cityBuilder, colonizer and annexer each clear the 25% line. At 4 players, arm C drops the annexer to 18.5%, just under the 18.75% line, so ROADS is 2 there. That change is not SIGNIFICANT.
 - Arms A, B and D cut SPREAD significantly at 3 and 4 players, mostly by lowering the colonizer and raising cityBuilder and annexer. Arm C does not change SPREAD in a way the intervals can separate from zero.
 - The same arms A, B and D shorten games. At 3 players their average rounds are 11.02, 11.75 and 9.04, below the 12 to 16 band. The baseline is 14.23 and arm C is 14.21.
-- Arm C (bigger booms) moves nothing the intervals can separate from zero. Win rates, C1, C4 and C5 all include 0 at 3 players, at 4 players and in mixed play.
-- Arm A (city cap 6) moves wins from the colonizer (-12.4 points) to cityBuilder (+9.4) and annexer (+5.7) at 3 players. It also lowers comebacks: C4 falls 5.9 points and C5 falls 7.1 points, both SIGNIFICANT.
-- Arm B (largest empire 4) cuts the colonizer most (-23.5 points at 3 players) and does not lower comebacks. C4 is +2.2 points at 3 players (not significant) and +2.4 points at 4 players (SIGNIFICANT).
-- Arm D has the largest effect on length and leader changes. At 3 players C5 falls from 83.7% to 69.1%. In mixed play C5 falls from 95.5%, which just passes the 95% line, to 84.8%. Cities become the largest source for 46.7% of winners at 3 players, where region sets are the largest source for 37.2%.
-- At winPoints 16 (step 4), arm B keeps its SPREAD gain (42.1% against 58.4% for the control, SIGNIFICANT) at 14.72 rounds, inside the band. Arm A's SPREAD gain goes away (63.0%, not significant). Arm D keeps its SPREAD gain (44.0%, SIGNIFICANT) but reaches only 11.997 rounds. The +2 step also lengthens the baseline control to 16.99 rounds, so winPoints 16 is not a neutral setting.
+- Arm C (bigger booms): no outcome effect detectable at about +/-5 points. Win rates, C1, C4 and C5 all include 0 at 3 players, at 4 players and in mixed play. Arm C does change the economy: boom income at round 6 rises from 5.8% to 14.4% of income, but leaders get as much as trailing players (1.67 against 1.58 per round under C). The saved outputs store total income only, so these two income figures could not be reproduced from them.
+- Arm A (city cap 6) moves wins from the colonizer (-12.4 points) to cityBuilder (+9.4) and annexer (+5.7) at 3 players. The comeback drop is shown by C4, which falls 5.9 points (SIGNIFICANT). C5 also falls 7.1 points (SIGNIFICANT), but part of that comes from games being shorter.
+- Arm B (largest empire 4) cuts the colonizer most (-23.5 points at 3 players) and does not lower comebacks. C4 is +2.2 points at 3 players (not significant) and +2.4 points at 4 players (SIGNIFICANT). The largest empire title's share of winners' points rises from 7.0% to 20.9%, and the share of winners holding the title rises from 51.2% to 78.0%. Region sets remain every 3-player winner's largest source, so arm B rebalances which strategy wins rather than adding a new route.
+- Arm D has the largest effect on length and leader changes. At 3 players C5 falls from 83.7% to 69.1%. In mixed play C5 falls from 95.5%, which just passes the 95% line, to 84.8%. Cities become the largest source for 46.7% of winners at 3 players, where region sets are the largest source for 37.2%. By points won by winners, region sets (41.6%) still lead cities (39.2%) in arm D, though cities are the largest single source for 46.7% of winners.
+- At winPoints 16 (step 4), arm B keeps its SPREAD gain (42.1% against 58.4% for the control, SIGNIFICANT) at 14.72 rounds, inside the band. Arm A's SPREAD gain goes away and reverses: 63.0% against the control's 58.4%, +4.6 points, not significant. Arm D keeps its SPREAD gain (44.0%, SIGNIFICANT) but reaches only 11.997 rounds, which FAILS the 12 to 16 band. The +2 step also lengthens the baseline control to 16.99 rounds, so winPoints 16 is not a neutral setting.
 
 ## Caveats
 
 - Bots are not people. The win rates describe the bots, not human play. The playtest in plan step 5 is the real test of fun.
 - The colonizer is the only bot that deliberately completes regions. Bot skill may still drive some results, especially the colonizer's share.
 - One seed set (seed base 0) was used for every arm. The results hold for these 1,000 seeds. They were not checked on other seeds.
-- The intervals for differences do not use the pairing of seeds. A paired analysis could give narrower intervals. We did not measure how much the pairing helps.
+- The intervals for differences treat the arms as independent, which is conservative. Paired half-widths are given in the pairing section above.
 - Per-strategy rows describe seat appearances, not players. A strategy that fills more seats has more appearances.
 - Largest empire is compared as a whole category against region sets and cities. In these games its points were never a winner's largest single source, even at 4 points. Region sets add up to more.
 - Only one extra winPoints value (16) was tried in step 4. A value of 15 was not tested.
