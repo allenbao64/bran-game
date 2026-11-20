@@ -275,6 +275,7 @@ export async function GET(request: NextRequest) {
     if (isTurnsRoom(room)) { response.turnSeconds = room.turnSeconds ?? DEFAULT_TURN_SECONDS; response.rounds = room.rounds ?? LEGACY_TURN_ROUNDS; }
     if (isEmpireRoom(room)) response.turnSeconds = room.turnSeconds ?? DEFAULT_EMPIRE_TURN_SECONDS;
     if (isEmpire2Room(room)) response.turnSeconds = room.turnSeconds ?? DEFAULT_EMPIRE2_TURN_SECONDS;
+    if (isEmpire2Room(room)) response.underdogBoomPick = room.empire2Options?.underdogBoomPick === true;
     if (room.status === "ended") {
       const results = await Promise.all(room.players.map(async (player) => {
         const guesses = await redis.hgetall<Record<string, string>>(`bran:guesses:${code}:${player.id}`) ?? {};

@@ -288,6 +288,28 @@ test("turn timeouts apply lazily on GET", async () => {
   assert.ok(after.log.some((line: string) => /time ran out/i.test(line)), after.log.join(" | "));
 });
 
+test("a waiting Empire 2.0 room returns underdogBoomPick to a joiner", async () => {
+  for (const pick of [true, false]) {
+    const host = await json(await postRoom({ action: "create", name: "Host", mode: "empire2", underdogBoomPick: pick })) as Session;
+    const joiner = await json(await postRoom({ action: "join", code: host.code, name: "Brian" })) as Session;
+    assert.equal((await getRoom(joiner)).underdogBoomPick, pick, `boom pick ${pick}`);
+  }
+  const live = await json(await postRoom({ action: "create", name: "Host" })) as Session;
+  const liveRoom = await getRoom(live);
+  assert.equal(Object.prototype.hasOwnProperty.call(liveRoom, "underdogBoomPick"), false, "a live-race room has no boom key");
+});
+
+test("a turn that runs out logs a Time ran out line", async () => {
+  const sessions = await empire2Game(2);
+  await finishSetup(sessions);
+  const before = await viewOf(sessions[0]);
+  clock += before.turnMs + 1;
+  const after = await viewOf(sessions[0]);
+  const line = after.log.find((entry: string) => entry.startsWith("Time ran out. "));
+  assert.ok(line, after.log.join(" | "));
+  assert.match(line, /'s turn ended\.$/);
+});
+
 test("a compare-and-set conflict is retried and the action applies once", async () => {
   const sessions = await empire2Game(2);
   await finishSetup(sessions);

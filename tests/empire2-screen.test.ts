@@ -179,6 +179,22 @@ test("the action panel shows costs and disables actions that are not in the view
   assert.doesNotMatch(doc.body.textContent ?? "", /You can't do that right now\./, "no hint when an action is allowed");
 });
 
+test("a country name that matches nothing shows the no-match line", () => {
+  const doc = mountComponent(React.createElement(Empire2Game, gameProps(view(), "a")));
+  setField(doc, 'input[aria-label="Country name"]', "Zzqxv");
+  assert.equal(doc.querySelector(".e2-hint")?.textContent, "That doesn’t match a country on the list.");
+});
+
+test("an action button follows the view's legal list, not the screen's own influence check", () => {
+  const broke = view({ players: view().players.map((entry) => (entry.id === "a" ? { ...entry, influence: 0 } : entry)), costs: { expand: 2, colonize: 6, city: 3, annex: 5, relief: false } });
+  const sent: Empire2Action[] = [];
+  const doc = mountComponent(React.createElement(Empire2Game, gameProps(broke, "a", sent)));
+  setField(doc, 'input[aria-label="Country name"]', "Italy");
+  assert.equal(buttonNamed(doc, "Expand (2)")!.disabled, false, "Italy is in legal.expand and the view's cost is not null");
+  click(doc, "Expand (2)");
+  assert.deepEqual(sent, [{ type: "expand", code: "IT" }]);
+});
+
 test("a non-current player sees a waiting line and no action buttons", () => {
   const html = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view({ viewerId: "b", currentPlayerId: "a", legal: null, costs: null }), "b")));
   assert.match(text(html), /Waiting for Ana\./);
@@ -273,6 +289,23 @@ test("results show the winner line and the download button", () => {
   assert.match(text(html), /Ben \(you\)/);
 });
 
+test("a tie lists the names in standings order", () => {
+  // Engine order is Ben then Ana; Ana has more points, so the standings (and the cards) put her first.
+  const html = renderToStaticMarkup(React.createElement(Empire2Results, {
+    view: endedView({ reason: "points", winnerIds: ["b", "a"] }), players: roster, playerId: "a", onDownloadLog: () => {}, onLeave: () => {}
+  }));
+  assert.match(text(html), /Ana and Ben tie/);
+  assert.doesNotMatch(text(html), /Ben and Ana/);
+});
+
+test("results for a game ended in setup do not say Round 0", () => {
+  const html = renderToStaticMarkup(React.createElement(Empire2Results, {
+    view: { ...endedView({ reason: "hostEnded", winnerIds: ["a"] }), round: 0 }, players: roster, playerId: "a", onDownloadLog: () => {}, onLeave: () => {}
+  }));
+  assert.match(text(html), /Ended during setup/);
+  assert.doesNotMatch(text(html), /Round 0/);
+});
+
 test("host ended results say Ended early", () => {
   const html = renderToStaticMarkup(React.createElement(Empire2Results, {
     view: endedView({ reason: "hostEnded", winnerIds: ["a"] }), players: roster, playerId: "a", onDownloadLog: () => {}, onLeave: () => {}
@@ -313,6 +346,17 @@ test("the empire2 create request carries the chosen speed and boom option", asyn
   assert.equal(code, "");
   assert.deepEqual(rest, { action: "create", name: "Ana", gameId: "countries", mode: "empire2", turnSeconds: 45, underdogBoomPick: true });
   assert.match(doc.body.textContent ?? "", /Empire 2\.0 \(playtest\) · 45s turns · Underdog picks a boom/);
+});
+
+test("a joiner sees the boom option in the lobby tag", async () => {
+  const room = {
+    code: "ABC234", gameId: "countries", mode: "empire2", turnSeconds: 30, status: "waiting", startedAt: null, playerId: "b",
+    underdogBoomPick: true, myGuesses: [], players: roster
+  };
+  globalThis.fetch = (async () => new Response(JSON.stringify(room), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+  const doc = mountHome({ code: "ABC234", token: TOKEN, playerId: "b", name: "Ben" });
+  await flush();
+  assert.match(doc.body.textContent ?? "", /Underdog picks a boom/);
 });
 
 test("the 4-player roster shows four seats in an empire2 lobby", async () => {

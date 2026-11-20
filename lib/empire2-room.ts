@@ -254,7 +254,7 @@ export function renderLogLine(
     case "annex": return `${who} annexed ${country} from ${nameOf(entry.from)} (-${cost}).`;
     case "bounty": return `${who} claimed a bounty in ${country} (+${entry.amount ?? 0}).`;
     case "endTurn": return `${who} ended their turn.`;
-    case "timeout": return `${who}'s time ran out.`;
+    case "timeout": return `Time ran out. ${who}'s turn ended.`;
     case "roundStart": return `Round ${entry.round} starts.` + (entry.note ? ` Event: ${eventLabel(entry.note as EventKind)}.` : "");
     case "title":
       if (entry.playerId === null) return "Nobody holds the largest empire now.";

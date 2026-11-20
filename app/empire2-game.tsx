@@ -88,12 +88,10 @@ export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onA
 
   const nameOf = (id: string | null) => view.players.find((entry) => entry.id === id)?.name ?? "Someone";
   const colorOf = (id: string | null) => view.players.find((entry) => entry.id === id)?.color ?? NO_COLOR;
-  const me = view.players.find((entry) => entry.id === playerId);
   const host = players.find((entry) => entry.id === playerId)?.host === true;
   const { title, sub, mine, actor } = bannerOf(view, playerId, nameOf);
   useYourTurnTitle(mine);
   const seconds = view.deadline === null ? null : Math.max(0, Math.ceil((view.deadline - (Date.now() + skewMs)) / 1000));
-  const influence = me?.influence ?? 0;
   const color = colorOf(actor);
 
   // Turn actions exist only for the turn player in phase "playing" (the view sends legal and costs only then).
@@ -101,14 +99,17 @@ export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onA
   const resolved = country.trim() ? resolveCountry(country) : null;
   const code = resolved?.code ?? null;
   const owner = code ? view.owners[code] : undefined;
-  const affordable = (list: string[], cost: number | null) => Boolean(code && list.includes(code) && cost !== null && cost <= influence);
-  const expandOk = act !== null && affordable(act.legal.expand, act.costs.expand);
-  const colonizeOk = act !== null && affordable(act.legal.colonize, act.costs.colonize);
-  const cityOk = act !== null && affordable(act.legal.city, act.costs.city);
-  const annexOk = act !== null && affordable(act.legal.annex, act.costs.annex);
+  // The view decides: a button is enabled when the typed country is in the view's legal list and the view's cost is not null.
+  const allowed = (list: string[], cost: number | null) => Boolean(code && list.includes(code) && cost !== null);
+  const expandOk = act !== null && allowed(act.legal.expand, act.costs.expand);
+  const colonizeOk = act !== null && allowed(act.legal.colonize, act.costs.colonize);
+  const cityOk = act !== null && allowed(act.legal.city, act.costs.city);
+  const annexOk = act !== null && allowed(act.legal.annex, act.costs.annex);
   const expandLabel = act === null || act.costs.expand === null ? "Expand" : act.costs.expand === 0 ? "Expand (free)" : `Expand (${act.costs.expand})`;
   let hint: string | null = null;
-  if (act && code && !expandOk && !colonizeOk && !cityOk && !annexOk) {
+  if (act && country.trim() && !code) {
+    hint = NO_MATCH;
+  } else if (act && code && !expandOk && !colonizeOk && !cityOk && !annexOk) {
     hint = act.costs.expand === null && view.frontier.includes(code) ? "You have used your expands this turn." : NOT_NOW;
   }
 
@@ -205,8 +206,8 @@ export function Empire2Results({ view, players, playerId, onDownloadLog, onLeave
   const winners = view.result?.winnerIds ?? [];
   const standings = [...view.players].sort((a, b) => b.vp.total - a.vp.total || b.influence - a.influence);
   return <div className="panel results e2-results">
-    <h1>{resultHeading(view, winners.map(nameOf))}</h1>
-    <p className="lede">{roundText(view)}</p>
+    <h1>{resultHeading(view, standings.filter((entry) => winners.includes(entry.id)).map((entry) => nameOf(entry.id)))}</h1>
+    <p className="lede">{view.round < 1 ? "Ended during setup" : roundText(view)}</p>
     <div className="e2-board">{standings.map((entry, index) => <article className="e2-result" key={entry.id} style={{ borderLeft: `4px solid ${entry.color}`, paddingLeft: 12 }}>
       <small>{RANKS[index]}</small>
       <b>{entry.name}{entry.id === playerId ? " (you)" : ""}{winners.includes(entry.id) ? " · WINNER" : ""}</b>

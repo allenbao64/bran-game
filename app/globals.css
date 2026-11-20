@@ -103,6 +103,8 @@
 .e2-main,.e2-side{min-width:0;overflow-wrap:anywhere}
 @media(min-width:720px){.e2-game{grid-template-columns:minmax(0,1fr) minmax(250px,320px);gap:36px;align-items:start;padding:40px 0 60px}}
 .e2-banner{margin-top:0}
+.e2-banner .turn-clock{white-space:nowrap}
+@media (max-width:720px){.e2-banner .turn-clock{font-size:22px}}
 .e2-banner-text{display:grid;gap:4px;min-width:0}
 .e2-banner-text small{font:500 10px 'DM Mono',monospace;letter-spacing:.09em;color:#6b756e;text-transform:uppercase}
 .e2-banner.mine .e2-banner-text small{color:#fff}

@@ -104,11 +104,12 @@ export default function Home() {
     const data = await api<{
       code: string; gameId?: GameId; mode?: Mode; turnSeconds?: number; rounds?: number; status: Room["status"]; startedAt: number | null;
       players: Player[]; playerId: string; myGuesses: Answer[]; countryClaims?: Record<string, string>; results?: Result[];
-      turn?: TurnView; largestGroups?: Record<string, string[]>; startCountries?: Record<string, string>; recentGuesses?: GuessEntry[]; empire?: EmpireView | null; empire2?: Empire2View | null; scores?: Record<string, ScoreView>; claimLog?: ClaimLogEntry[]; awards?: Award[]; winners?: string[];
+      turn?: TurnView; largestGroups?: Record<string, string[]>; startCountries?: Record<string, string>; recentGuesses?: GuessEntry[]; empire?: EmpireView | null; empire2?: Empire2View | null; scores?: Record<string, ScoreView>; claimLog?: ClaimLogEntry[]; awards?: Award[]; winners?: string[]; underdogBoomPick?: boolean;
     }>(`/api/room?code=${encodeURIComponent(code)}`, { headers: { Authorization: `Bearer ${token}` } });
     const gameId = data.gameId ?? "countries";
     const mode: Mode = data.mode === "turns" || data.mode === "empire" || data.mode === "empire2" ? data.mode : "live";
     setRoom({ code: data.code, token, gameId, mode, turnSeconds: data.turnSeconds, rounds: data.rounds, status: data.status, startedAt: data.startedAt, players: data.players });
+    if (data.mode === "empire2" && data.underdogBoomPick !== undefined) setUnderdogBoom(data.underdogBoomPick);
     setSelectedMode(mode); setLargestGroups(data.largestGroups ?? {}); setStartCountries(data.startCountries ?? {}); setRecentGuesses(data.recentGuesses ?? []);
     if (data.turn) { setTurn(data.turn); setSkewMs(data.turn.serverNow - Date.now()); }
     else setTurn(null);
@@ -323,15 +324,15 @@ export default function Home() {
     {stage === "home" && <div className="home-grid">
       <section className="home-intro" aria-label="How it works">
         <h1>Name countries. Paint the map.</h1>
-        <p className="lede">A geography game for 2–3 players. Every country you name turns your colour on a shared world map.</p>
+        <p className="lede">A geography game for 2–4 players. Every country you name turns your colour on a shared world map.</p>
         <WorldMap claims={HOME_EXAMPLE_CLAIMS} players={HOME_EXAMPLE_PLAYERS} youId="" compact/>
         <ol className="home-steps">
-          <li><span><b>Pick a game.</b> Country Sprint has three modes: a live race, turns, or Empire.</span></li>
+          <li><span><b>Pick a game.</b> Country Sprint has four modes: a live race, turns, Empire and Empire 2.0.</span></li>
           <li><span><b>Share the room code</b> with one or two friends.</span></li>
           <li><span><b>Name it first, own it.</b> Most countries, or most points, wins.</span></li>
         </ol>
       </section>
-      <div className="card"><div className="card-title">GAME <span>2–3 PLAYERS</span></div>
+      <div className="card"><div className="card-title">GAME <span>2–4 PLAYERS</span></div>
         <div className="game-picker" role="group" aria-label="Choose a game">
           {(Object.values(GAME_CATALOG)).map((option) => <button type="button" className={`game-option${selectedGame === option.id ? " selected" : ""}`} key={option.id} aria-pressed={selectedGame === option.id} onClick={() => setSelectedGame(option.id)}>
             <span className="game-option-top"><b>{option.title}</b><small>{option.durationLabel}</small></span>
