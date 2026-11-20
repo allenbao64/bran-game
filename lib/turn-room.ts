@@ -24,7 +24,7 @@ export type GuessEvent = { playerId: string; kind: "claimed" | "wrong" | "passed
 export type TurnRoom = {
   code: string;
   gameId?: string;
-  mode?: "live" | "turns" | "empire";
+  mode?: "live" | "turns" | "empire" | "empire2";
   status: "waiting" | "playing" | "ended";
   startedAt: number | null;
   players: { id: string; token: string; name: string; host: boolean }[];

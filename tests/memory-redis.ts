@@ -165,6 +165,14 @@ export class MemoryRedis {
       this.values.set(key, JSON.parse(args[1]));
       return { ok: true };
     }
+    if (script.includes("tonumber(room.empire2Version or 0) ~= tonumber(ARGV[1])")) {
+      // Compare-and-set on the Empire 2.0 version, mirroring EMPIRE2_CAS_SCRIPT (atomic: no await between read and write).
+      const current = this.values.get(key) as (StoredRoom & { empire2Version?: number }) | undefined;
+      if (!current) return { error: "Room not found." };
+      if (current.status !== "playing" || (current.empire2Version ?? 0) !== Number(args[0])) return { conflict: true };
+      this.values.set(key, JSON.parse(args[1]));
+      return { ok: true };
+    }
     if (script.includes("tonumber(room.turn.number) ~= tonumber(ARGV[1])")) {
       // Compare-and-set on the turn number, mirroring TURN_CAS_SCRIPT.
       // Real Lua runs atomically: read and write with no await in between.
@@ -216,7 +224,8 @@ export class MemoryRedis {
     if (script.includes("name=ARGV[3], host=false")) {
       if (!room) return { error: "Room not found. Check the code." };
       if (room.status !== "waiting") return { error: "That round has already started." };
-      if (room.players.length >= 3) return { error: "This room is full." };
+      const cap = room.mode === "empire2" ? 4 : 3;
+      if (room.players.length >= cap) return { error: "This room is full." };
       room.players.push({ id: args[0], token: args[1], name: args[2], host: false });
       await this.set(key, room);
       return {
