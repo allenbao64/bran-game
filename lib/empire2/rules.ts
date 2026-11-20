@@ -45,6 +45,7 @@ export const EMPIRE2_RULES: Rules = {
   territoryPoints: true,
   cheapColonize: "everyStuckTurn",
   explorerTitle: true,
+  underdogBoomPick: false,
 };
 
 // Owner-chosen rules (2026-11-20), from the phase 2 comparison. Numbers are re-tuned in step 4b.
@@ -56,6 +57,7 @@ export const EMPIRE2_PLAY_RULES: Rules = {
   maxExpandsPerTurn: 2,
   winPoints: 14,
   explorerTitle: false,
+  underdogBoomPick: false,
 };
 
 /** A fresh rules object: the defaults with the overrides applied. */

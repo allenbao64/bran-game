@@ -2,9 +2,9 @@ import { findClaimableBounty } from "./bounties";
 import type { Empire2Geo } from "./geo-adapter";
 import { actionCosts, colonizePrice, reliefAvailable } from "./economy";
 import { annexProtection, type ProtectionReason } from "./protection";
-import { engineError, appendLog, freeCountries, frontier, isKnownCode, normCode, ownedBy, ownerOf, patchState, updatePlayer } from "./state";
+import { engineError, appendLog, freeCountries, frontier, isBoomPickPending, isKnownCode, normCode, ownedBy, ownerOf, patchState, updatePlayer } from "./state";
 import { withTitles } from "./titles";
-import { endTurn } from "./turns";
+import { applyBoomPick, endTurn } from "./turns";
 import type {
   Action, ActionResult, BountyCard, CountryCode, Ctx, EmpireState, PlayerId, TurnState,
 } from "./types";
@@ -203,6 +203,18 @@ export function applyPlayAction(state: EmpireState, playerId: PlayerId, action: 
   const type = readType(action);
   if (type === null) return engineError("unknownAction");
   if (type === "pickCapital" || type === "pickFoothold") return engineError("wrongPhase");
+
+  if (isBoomPickPending(state) && state.boomPick !== undefined) {
+    // underdogBoomPick: until the picker chooses, only the picker may act, and only with pickBoom.
+    const pick = state.boomPick;
+    if (playerId !== pick.playerId) return engineError("notYourPick");
+    if (type !== "pickBoom") return engineError("boomPickFirst");
+    if (ctx.now >= pick.startedAt + state.turnMs) return engineError("turnExpired");
+    const region = (action as unknown as { region?: unknown }).region;
+    if (typeof region !== "string" || !new Set(ctx.geo.regionNames()).has(region)) return engineError("unknownRegion");
+    return { ok: true, state: applyBoomPick(state, ctx, region, "player", ctx.now) };
+  }
+  if (type === "pickBoom") return engineError("wrongPhase");
 
   const turn = state.turn;
   if (turn === null) return engineError("wrongPhase");
