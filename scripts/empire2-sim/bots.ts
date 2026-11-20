@@ -1,6 +1,6 @@
 // Bots: pure functions of (state, map, player, known capitals, rng). No module state, no Math.random, no Date.
 import {
-  actionCosts, annexProtection, bountyFits, computeIncome, continentsOwned, freeCountries, frontier,
+  actionCosts, annexProtection, bestBoomPick, bountyFits, computeIncome, continentsOwned, freeCountries, frontier,
   legalFootholds, legalMoves, ownedBy, scorePlayer,
 } from "@/lib/empire2";
 import type { Empire2Geo } from "@/lib/empire2";
@@ -48,6 +48,15 @@ function playerOf(state: EmpireState, id: PlayerId): PlayerState {
   const p = state.players.find((x) => x.id === id);
   if (!p) throw new Error(`unknown player ${id}`);
   return p;
+}
+
+/**
+ * The boom pick of underdogBoomPick (every strategy plays it the same way): the engine's own bestBoomPick, so a bot
+ * and a timeout choose alike. No rng.
+ */
+export function decideBoomPick(strategy: Strategy, state: EmpireState, geo: Empire2Geo, playerId: PlayerId): Action {
+  void strategy;
+  return { type: "pickBoom", region: bestBoomPick(state, playerId, geo) };
 }
 
 /** Setup picks (section 2.4). No rng. */

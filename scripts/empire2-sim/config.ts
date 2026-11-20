@@ -92,6 +92,7 @@ export const OPTION_CHOICES: Record<string, readonly string[] | "boolean"> = {
   territoryPoints: "boolean",
   explorerTitle: "boolean",
   cheapColonize: ["everyStuckTurn", "oncePerGame"],
+  underdogBoomPick: "boolean",
 };
 
 /** Fields that must not change during tuning (a change means a rule change: STOP). */

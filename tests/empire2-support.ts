@@ -4,8 +4,9 @@ import type { CountryTraits, Empire2Geo } from "@/lib/empire2/geo-adapter";
 import { resolveRules } from "@/lib/empire2/rules";
 import { computeTitles } from "@/lib/empire2/titles";
 import { scorePlayer } from "@/lib/empire2/victory";
-import { continentsOwned, frontier, largestGroupSize, ownedBy, ownerOf } from "@/lib/empire2/state";
+import { continentsOwned, frontier, isBoomPickPending, largestGroupSize, ownedBy, ownerOf } from "@/lib/empire2/state";
 import { isSecondOfTwo, roundOrder, roundSeatOrder } from "@/lib/empire2/order";
+import { boomPickerId } from "@/lib/empire2/boom-pick";
 import type {
   ActionResult, BountyCard, Ctx, EmpireState, EventKind, PlayerId, Rng, Rules, Titles,
 } from "@/lib/empire2/types";
@@ -349,7 +350,13 @@ export function assertInvariants(before: EmpireState, after: EmpireState, geo: E
   assert.ok(after.round >= before.round, "round went backwards");
   if (after.phase === "play") {
     assert.ok(after.round >= 1 && after.round <= rules.roundCap, `round ${after.round} out of range`);
-    assert.ok(after.turn !== null, "play without a turn");
+    if (isBoomPickPending(after)) {
+      // underdogBoomPick: the round waits for its pick. No turn and no booms yet.
+      assert.equal(after.turn, null, "a pending boom pick has a turn");
+      assert.deepEqual(after.booms, [], "booms drawn before the pick");
+    } else {
+      assert.ok(after.turn !== null, "play without a turn");
+    }
     if (after.turn) {
       const expectedSeat = roundSeatOrder(after, after.round)[after.turn.indexInRound];
       assert.equal(after.turn.seat, expectedSeat, "seat does not follow roundOrder");
@@ -378,6 +385,21 @@ export function assertInvariants(before: EmpireState, after: EmpireState, geo: E
       assert.ok(!(before.turn && before.turn.isSecondOfTwo), "won on a second turn");
     } else if (after.result) {
       assert.equal(after.round, rules.roundCap, "cap finish before the cap round");
+    }
+  }
+
+  // 12. underdogBoomPick: the pick record exists only under the rule; the picker is the lowest snapshot VP
+  // (first in turn order on a tie); the picked region is one of the round's booms; the booms are boomRegionCount
+  // distinct regions, sorted (the picked one plus draws from the others).
+  if (!rules.underdogBoomPick) {
+    assert.equal(after.boomPick, undefined, "boomPick present with the rule off");
+  } else if (after.phase === "play" && after.boomPick !== undefined && after.boomPick.round === after.round) {
+    const pick = after.boomPick;
+    assert.equal(pick.playerId, boomPickerId(after), "picker is not the lowest snapshot VP in turn order");
+    if (pick.region !== null) {
+      assert.ok(after.booms.includes(pick.region), "the picked region is not one of the booms");
+      assert.equal(after.booms.length, Math.min(rules.boomRegionCount, geo.regionNames().length), "boom count");
+      assert.deepEqual(after.booms, [...new Set(after.booms)].sort(), "booms not distinct and sorted");
     }
   }
 

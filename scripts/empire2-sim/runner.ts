@@ -1,9 +1,9 @@
 // One game (playGame) and one configuration (runConfig). Records what section 3.2 asks for.
-import { advanceTimeouts, applyAction, createGame, currentPlayerId, empire2Geo, ownedBy, scorePlayer } from "@/lib/empire2";
+import { advanceTimeouts, applyAction, createGame, currentPlayerId, empire2Geo, isBoomPickPending, ownedBy, scorePlayer } from "@/lib/empire2";
 import type { Empire2Geo } from "@/lib/empire2";
 import { assertInvariants, miniGeo, newTrackers } from "@/tests/empire2-support";
 import type { Action, BountyKind, EmpireState, Rules } from "@/lib/empire2/types";
-import { decideSetup, decideTurn, makeKnownCapitals, PURE_STRATEGIES, type Strategy } from "./bots";
+import { decideBoomPick, decideSetup, decideTurn, makeKnownCapitals, PURE_STRATEGIES, type Strategy } from "./bots";
 import { type ConfigSpec, type Field, MAX_ACTIONS_PER_TURN, MAX_TURNS_PER_GAME, type MapKind } from "./config";
 import { mulberry32, streamSeed } from "./rng";
 import { emptyStats, type GameRecord, type RoundRecord, type SeatRecord, type WaitingRecord, type SeatStats } from "./types";
@@ -18,7 +18,7 @@ export type PlayOptions = {
   onStep?: (before: EmpireState, after: EmpireState) => void;
 };
 
-type StepKind = "setup" | "action" | "endTurn" | "timeout";
+type StepKind = "setup" | "action" | "endTurn" | "timeout" | "pick";
 type Waiting = { seat: number; outcome: WaitingRecord["outcome"] | null };
 
 function bucketOf(round: number): 0 | 1 | 2 {
@@ -52,7 +52,8 @@ class Collector {
     if (kind === "action") this.action(before, after);
     if (kind === "endTurn") this.turnEnd(before, after, true);
     if (kind === "timeout") this.turnEnd(before, after, false);
-    if (after.phase !== "setup" && after.round !== this.curRound) this.roundStarted(after);
+    // A round is recorded once its first turn exists: under underdogBoomPick the round starts before its booms and income.
+    if (after.phase !== "setup" && after.turn !== null && after.round !== this.curRound) this.roundStarted(after);
   }
 
   private roundStarted(after: EmpireState): void {
@@ -202,6 +203,19 @@ export function playGame(o: PlayOptions): GameRecord {
   }
 
   while (state.phase === "play") {
+    if (isBoomPickPending(state) && state.boomPick !== undefined) {
+      // underdogBoomPick: the picker's bot makes the round's pick first. Its turn does not start until then.
+      const pid = state.boomPick.playerId;
+      const seat = seatOf(state, pid);
+      const action = decideBoomPick(o.lineup[seat], state, geo, pid);
+      const before: EmpireState = state;
+      const r = applyAction(state, pid, action, { geo, rng: engineRng, now: state.boomPick.startedAt });
+      if (!r.ok) throw new Error(`seed ${o.seed} seat ${seat} round ${state.round}: pickBoom ${action.type === "pickBoom" ? action.region : ""} rejected: ${r.error.code}`);
+      state = r.state;
+      col.step(before, state, "pick");
+      o.onStep?.(before, state);
+      continue;
+    }
     const turn0 = state.turn;
     if (turn0 === null) throw new Error(`seed ${o.seed}: play with no turn`);
     const u = slowRng();
@@ -221,7 +235,7 @@ export function playGame(o: PlayOptions): GameRecord {
       const before: EmpireState = state;
       const r = applyAction(state, pid, action, { geo, rng: engineRng, now: cur.startedAt });
       if (!r.ok) {
-        const target = action.type === "endTurn" ? "" : action.code;
+        const target = action.type === "endTurn" ? "" : action.type === "pickBoom" ? action.region : action.code;
         throw new Error(`seed ${o.seed} seat ${cur.seat} round ${state.round}: ${action.type} ${target} rejected: ${r.error.code}`);
       }
       state = r.state;

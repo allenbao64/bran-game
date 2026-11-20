@@ -56,6 +56,20 @@ export type Rules = {
   winCheck: WinCheck;              // "endOfTurn"  (today: a win is checked at the end of each turn)
   territoryPoints: boolean;        // true  (today: territory scores 1 point per countriesPerTerritory)
   cheapColonize: CheapColonize;    // "everyStuckTurn"  (today: the relief price applies on every stuck turn)
+  underdogBoomPick: boolean;       // false  (true: the lowest-VP player picks one of this round's boom regions; see boom-pick.ts)
+};
+
+/**
+ * The round's boom pick (only on states whose rules have underdogBoomPick true). Set at round start; `region` is null
+ * until the picker chooses (or the engine does on a timeout). It stays on the state after the pick, as the round's record.
+ */
+export type BoomPick = {
+  round: number;
+  playerId: PlayerId;              // lowest round-start VP; ties go to the first of them in this round's turn order
+  region: string | null;           // null while the pick is pending
+  by: "player" | "timeout" | null; // null while pending
+  startedAt: number;               // ms; the pick's clock start (same length as a turn: state.turnMs)
+  secondOfTwo: boolean;            // whether the round's first turn is a back-to-back turn (decided at round start)
 };
 
 export type PlayerState = {
@@ -129,7 +143,7 @@ export type VpBreakdown = {
 
 export type LogType =
   | "capital" | "foothold" | "expand" | "colonize" | "city" | "annex"
-  | "bounty" | "endTurn" | "timeout" | "roundStart" | "title" | "win" | "cap";
+  | "bounty" | "endTurn" | "timeout" | "roundStart" | "title" | "win" | "cap" | "boomPick";
 export type LogEntry = {
   type: LogType;
   round: number;
@@ -138,7 +152,8 @@ export type LogEntry = {
   from?: PlayerId;                 // annex: previous owner
   amount?: number;                 // cost (negative) or payout (positive) where relevant
   second?: boolean;                // the actor's turn was a second-of-two turn
-  note?: string;                   // title: "largestEmpire" | "explorer"; roundStart: event kind or ""
+  note?: string;                   // title: "largestEmpire" | "explorer"; roundStart: event kind or ""; boomPick: the region
+  auto?: boolean;                  // boomPick: true when the engine picked on the picker's timeout
 };
 
 export type GameResult = {
@@ -165,6 +180,7 @@ export type EmpireState = {
   bounties: BountyCard[];          // open bounty cards this round, in slot order
   event: EventKind | null;         // world event active THIS round
   titles: Titles;
+  boomPick?: BoomPick;             // underdogBoomPick only: this round's pick (absent when the rule is off)
   reliefUsed?: PlayerId[];         // players who have used the stuck-colonize relief (absent = none); only the once-per-game rule reads it
   waitingWin: PlayerId[];          // players who ended a second-of-two turn with >= winPoints and have not yet had their next turn end
   lastIncome: Record<PlayerId, IncomeBreakdown> | null;  // what each player collected at the start of this round
@@ -180,7 +196,8 @@ export type EngineErrorCode =
   | "notOwned" | "alreadyCity" | "cityLimit" | "wrongCapital"
   | "notRival" | "notBordering" | "annexUsed" | "secondTurnNoAnnex" | "ceasefire"
   | "protectedCity" | "protectedStartingCapital" | "protectedFoothold" | "protectedRegionSet"
-  | "targetBelow" | "unknownAction" | "badRules";
+  | "targetBelow" | "unknownAction" | "badRules"
+  | "notYourPick" | "boomPickFirst" | "unknownRegion";
 export type EngineError = { code: EngineErrorCode; message: string };   // message: short, plain (UI-ready), see 13.4
 
 export type Ok<T> = { ok: true } & T;
@@ -193,6 +210,7 @@ export type Action =
   | { type: "colonize"; code: CountryCode }
   | { type: "city"; code: CountryCode; capital: string }
   | { type: "annex"; code: CountryCode; capital: string }
+  | { type: "pickBoom"; region: string }
   | { type: "endTurn" };
 
 export type Ctx = { geo: Empire2Geo; rng: Rng; now: number };   // Empire2Geo imported from geo-adapter (type import)

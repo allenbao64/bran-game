@@ -31,7 +31,18 @@ export function computeIncome(state: EmpireState, playerId: PlayerId, geo: Empir
 
 /** Three (boomRegionCount) regions drawn by a Fisher-Yates over sorted names; returned sorted (section 8.3). */
 export function drawBooms(rng: Rng, geo: Empire2Geo, count: number): string[] {
-  const names = [...geo.regionNames()];
+  return drawBoomsFrom(rng, [...geo.regionNames()], count);
+}
+
+/**
+ * The same draw, from the regions other than `exclude` (underdogBoomPick: the picked region is already booming).
+ * Returned sorted. Draws rng exactly as drawBooms does over the same names.
+ */
+export function drawBoomsExcept(rng: Rng, geo: Empire2Geo, count: number, exclude: string): string[] {
+  return drawBoomsFrom(rng, [...geo.regionNames()].filter((r) => r !== exclude), count);
+}
+
+function drawBoomsFrom(rng: Rng, names: string[], count: number): string[] {
   for (let i = names.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [names[i], names[j]] = [names[j], names[i]];

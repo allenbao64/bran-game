@@ -33,6 +33,9 @@ const MESSAGES: Record<EngineErrorCode, string> = {
   targetBelow: "You can only annex from players at or above you.",
   unknownAction: "Unknown action.",
   badRules: "A rule option has an invalid value.",
+  notYourPick: "Only the player picking this round's boom can act now.",
+  boomPickFirst: "Pick this round's boom region first.",
+  unknownRegion: "That isn't a region in the game.",
 };
 
 /** A typed rejection with the exact UI message for its code (or `detail` in place of the default message). */
@@ -48,8 +51,16 @@ export function ownerOf(s: EmpireState, code: CountryCode): PlayerId | undefined
 export const playerById = (s: EmpireState, id: PlayerId): PlayerState | undefined =>
   s.players.find((p) => p.id === id);
 
+/** True while the round's boom pick (underdogBoomPick) is waiting for the picker: play, no turn yet. */
+export function isBoomPickPending(s: EmpireState): boolean {
+  return s.phase === "play" && s.boomPick !== undefined && s.boomPick.region === null;
+}
+
 export function currentPlayerId(s: EmpireState): PlayerId | null {
-  if (s.phase === "play") return s.turn ? s.turn.playerId : null;
+  if (s.phase === "play") {
+    if (s.turn) return s.turn.playerId;
+    return isBoomPickPending(s) && s.boomPick ? s.boomPick.playerId : null;
+  }
   if (s.phase === "setup" && s.setup) {
     const seat = s.setup.order[s.setup.cursor];
     const p = s.players.find((x) => x.seat === seat);
