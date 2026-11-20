@@ -13,11 +13,12 @@ If the picker does not choose within the turn timer, the engine picks for them: 
 - Base rules (the owner's candidate): colonizeCost 6, winPoints 16, underdogIncome 3, underdogGap 1, largestEmpirePoints 4.
 - P0: base. P1: base plus underdogBoomPick. P2: base plus underdogBoomPick, boomRegionCount 5, boomIncome 2, boomCityIncome 3. P3: base plus the bigger booms only (no pick), which separates the two effects.
 - Configs real-3p-pure, real-4p-pure and real-3p-mixed; 1,000 games each; seed base 0, so every arm plays the same seeds and the same lineups.
-- Pre-registered success criterion, fixed before any run. An arm succeeds on real-3p-pure against P0 if all three hold:
+- Pre-registered success criterion. The criterion was written into the instructions given to the agent that ran the experiment, before any run started. It was committed to the repository only with this document, so the repository itself does not show the earlier timing. An arm succeeds on real-3p-pure against P0 if all three hold:
   1. C4 (last place at round 6 wins) rises at least 5 points, with a paired 95% interval above 0;
   2. C1 (average game length in rounds) stays between 12 and 16;
   3. the city-building max-min win-rate gap is not more than 5 points above P0's.
 - Method (analyse.py): Wilson 95% intervals for single proportions; paired intervals over games for differences against P0; a paired bootstrap (2,000 resamples) for the max-min gap, the within-10 count and the effective number.
+- Significance and independence: the "Sig" labels are nominal 95% intervals with no correction for multiple comparisons. There are about 10 comparisons per arm in real-3p-pure, 10 in real-4p-pure and 5 in real-3p-mixed (about 75 in all). None of the real-3p-pure results marked significant survives a correction for about 10 tests (a per-test 99.5% interval). The Wilson intervals treat players in the same game as independent, which they are not, so they are too narrow. The mixed-config strategy win-rate figure is 33.3% in every arm by construction (three seats, one strategy) and carries no information.
 
 ## real-3p-pure (P0 is the base)
 
@@ -82,15 +83,23 @@ Only one strategy (mixed) plays in this config, so there are no per-strategy or 
 ## Findings
 
 1. On real-3p-pure no arm meets the criterion. C4 moves by -0.7 to -2.3 points, against a needed rise of 5, and no interval reaches +5 (the highest upper bound is +2.2 for P1). Base C4 is 18.6%.
-2. The pick rule alone (P1) leaves 3p-pure almost unchanged but moves 4p: the colonizer win rate rises 5.2 points (paired +1.8 to +8.7), the city-building max-min gap widens from 15.8 to 23.8 points, and the effective number falls by 0.15. C4 in 4p stays at 6.4% to 7.3% in every arm, so it still fails the gate.
+2. EXPLORATORY. The pick rule alone (P1) leaves 3p-pure almost unchanged but moves 4p: the colonizer win rate rises 5.2 points (paired +1.8 to +8.7), the city-building max-min gap widens from 15.8 to 23.8 points, and the effective number falls by 0.15. These 4p results pass a correction for 10 tests but not for the 25 tests per arm across all configs. C4 in 4p stays at 6.4% to 7.3% in every arm, so it still fails the gate.
 3. Bigger random booms with the pick (P2) on 3p-pure raise cityBuilder by 4.1 points and lower annexer by 4.4 points (both significant). Colonizer and C4 do not move significantly.
 4. Bigger booms without the pick (P3) on 3p-pure narrow the city-building gap from 8.5 to 3.4 points, but that change is not significant (interval -9.3 to +1.6). Colonizer falls 3.1 points and leader change after round 5 falls 1.8 points (both significant, small).
 5. Game length (C1) is unchanged in every arm and config: all differences are within about 0.25 rounds and none is significant. No game ended before round 6 in any run.
 6. In real-3p-mixed, no arm changes C4 or C5 beyond noise, and all four arms pass the gate. The leader-at-round-6 difference for P3 (+0.4 points, lower bound 0.0) sits on the edge of significance and is not a finding to act on.
 
-## Picker statistics (not available)
+## Picker diagnostics (P1, real-3p-pure, 300 games, measured by the reviewer with the runner's observer)
 
-The records do not store which player picked or which region they picked (each round holds only income, bounties, action counts and round-start victory points), so the picker's strategy and whether the picker went on to win are not reported. Adding those fields to the records would be needed to answer that question.
+- 4,399 pick events (14.7 per game), all made by the player, none by timeout.
+- Picker strategy shares: expander 53.2%, cityBuilder 17.0%, colonizer 15.3%, annexer 14.5%.
+- The picked region paid the picker more than 0 in 100% of picks.
+- Players who picked at round 6 or later went on to win 21.7% of those player-games (127 of 584). By strategy: colonizer 47.2% (51 of 108), cityBuilder 29.6% (40 of 135), annexer 22.2% (24 of 108), expander 5.2% (12 of 233).
+- These players were last when they picked, so the closest comparison is C4 (18.6% in P0, 18.1% in P1), not the 33.3% per-seat baseline.
+
+## What bots cannot tell us
+
+Bots always take their highest-paying region and never misjudge, so this experiment shows only that the boom pick adds no comebacks for these bots. It cannot separate "the rule does nothing" from "bots do not use it the way people would" (for example, picking a region to deny a leader). A human playtest would need to show trailing players using the pick to close gaps, a change in late lead changes and close finishes compared with the same players without it, and that players find it fair and meaningful.
 
 ## Reproduce
 
