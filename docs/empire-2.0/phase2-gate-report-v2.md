@@ -140,11 +140,11 @@ Stage 1 (colonizeCost sweep). For each value N in 3, 4, 5, 6, make `{"colonizeCo
 node --import tsx scripts/empire2-sim/run.ts --config real-3p-pure --config real-4p-pure --games 1000 --seed-base 0 --rules <rules-file> --out <out-dir>
 ```
 
-Stage 2 (winPoints sweep). With `colonizeCost` 6, for each value N in 8 to 16, make `{"colonizeCost": 6, "winPoints": N}` and run `--config real-3p-pure --games 1000 --seed-base 0`.
+Stage 2 (winPoints sweep). With `colonizeCost` 6, for each value N in 8 to 16, make `{"colonizeCost": 6, "winPoints": N}` and run `--config real-3p-pure --games 1000 --seed-base 0 --rules <rules-file> --out <out-dir>`.
 
-Stage 3 (comeback grid). With `colonizeCost` 6 and `winPoints` 14, for each `underdogIncome` I in 0 to 6 and `underdogGap` G in 1 to 5, make `{"colonizeCost": 6, "winPoints": 14, "underdogIncome": I, "underdogGap": G}` and run `--config real-3p-pure --games 1000 --seed-base 0`.
+Stage 3 (comeback grid). With `colonizeCost` 6 and `winPoints` 14, for each `underdogIncome` I in 0 to 6 and `underdogGap` G in 1 to 5, make `{"colonizeCost": 6, "winPoints": 14, "underdogIncome": I, "underdogGap": G}` and run `--config real-3p-pure --games 1000 --seed-base 0 --rules <rules-file> --out <out-dir>`.
 
-Diagnosis (2,000 games): `{"colonizeCost": 6}` with `--config real-3p-pure --games 2000 --seed-base 0`. The per-strategy numbers come from the `*.records.json` file in the output folder.
+Diagnosis (2,000 games): `{"colonizeCost": 6}` with `--config real-3p-pure --games 2000 --seed-base 0 --rules <rules-file> --out <out-dir>`. The per-strategy numbers come from the `*.records.json` file in the output folder.
 
 EXPLORATORY probes: copy the repo with `git -C /home/user/wt-empire2 archive HEAD | tar -x -C <probe-dir>` and link `node_modules`. In `lib/empire2/rules.ts`, change `regionSetPoints` to return 1 / 2 / 3 (probe a) or 1 / 1 / 2 (probe b). Then run the same 2,000-game command from the probe folder. Do not commit the probe.
 
