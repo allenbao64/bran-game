@@ -8,7 +8,7 @@ import { ROOM_TTL_SECONDS } from "@/lib/redis";
 import { countryByCode } from "@/lib/countries";
 import { playerColor } from "@/lib/player-colors";
 import {
-  DEFAULT_EMPIRE2_TURN_SECONDS, playtestRules, type Empire2Action, type Empire2Phase, type Empire2View, type Empire2ViewPlayer,
+  DEFAULT_EMPIRE2_TURN_SECONDS, empire2TurnMs, playtestRules, type Empire2Action, type Empire2Phase, type Empire2View, type Empire2ViewPlayer,
 } from "@/lib/empire2-playtest";
 import {
   actionCosts, advanceTimeouts, applyAction, autoSetupPick, bountyLabel, createGame, currentPlayerId, empire2Geo, eventLabel,
@@ -16,6 +16,7 @@ import {
   type Ctx, type EmpireState, type EventKind, type LogEntry,
 } from "@/lib/empire2";
 import { resolveCap } from "@/lib/empire2/victory";
+import { clockDeadline } from "@/lib/empire2/clock";
 
 export type Empire2RoomPlayer = { id: string; token: string; name: string; host: boolean };
 /** Round-start victory points of every player, recorded once per round started (the engine's roundStartVp snapshot). */
@@ -119,7 +120,7 @@ function newGame(room: Empire2Room): EmpireState {
   const started = room.startedAt ?? 0;
   const created = createGame({
     playerIds: ids,
-    turnMs: (room.turnSeconds ?? DEFAULT_EMPIRE2_TURN_SECONDS) * 1000,
+    turnMs: empire2TurnMs(room.turnSeconds ?? DEFAULT_EMPIRE2_TURN_SECONDS),
     rules: playtestRules(room.empire2Options?.underdogBoomPick ?? false),
   }, ctxAt(started));
   if (!created.ok) throw new Error(`Empire 2.0 game could not start: ${created.error.code}`);
@@ -129,8 +130,8 @@ function newGame(room: Empire2Room): EmpireState {
 /** Clock start of the engine's pending clock (boom pick or turn), or null when none runs. */
 function playDeadline(state: EmpireState): number | null {
   if (state.phase !== "play") return null;
-  if (isBoomPickPending(state) && state.boomPick) return state.boomPick.startedAt + state.turnMs;
-  if (state.turn) return state.turn.startedAt + state.turnMs;
+  if (isBoomPickPending(state) && state.boomPick) return clockDeadline(state.boomPick.startedAt, state.turnMs);
+  if (state.turn) return clockDeadline(state.turn.startedAt, state.turnMs);
   return null;
 }
 
@@ -158,8 +159,8 @@ function syncEmpire2(room: Empire2Room, now: number): boolean {
   let state = room.empire2;
   if (room.status === "playing" && state.phase !== "finished") {
     while (state.phase === "setup" && state.setup !== null) {
-      const deadline = (room.empire2SetupAt ?? room.startedAt ?? now) + state.turnMs;
-      if (now < deadline) break;
+      const deadline = clockDeadline(room.empire2SetupAt ?? room.startedAt ?? now, state.turnMs);
+      if (deadline === null || now < deadline) break; // untimed setup waits for the picker
       const picker = currentPlayerId(state);
       const action = autoSetupPick(state, ctxAt(deadline));
       if (picker === null || action === null) break;
@@ -283,9 +284,9 @@ export function empire2View(room: Empire2Room, now: number, viewerId: string): E
   const isPicker = picker === viewerId;
   const turnMs = state.turnMs;
   const deadline = ended ? null
-    : setupPhase ? (room.empire2SetupAt ?? room.startedAt ?? now) + turnMs
-    : phase === "boomPick" && state.boomPick ? state.boomPick.startedAt + turnMs
-    : state.turn ? state.turn.startedAt + turnMs
+    : setupPhase ? clockDeadline(room.empire2SetupAt ?? room.startedAt ?? now, turnMs)
+    : phase === "boomPick" && state.boomPick ? clockDeadline(state.boomPick.startedAt, turnMs)
+    : state.turn ? clockDeadline(state.turn.startedAt, turnMs)
     : null;
   const order = room.players.map((p) => p.id);
   const nameOf = (id: string | null | undefined) => room.players.find((p) => p.id === id)?.name ?? "Someone";

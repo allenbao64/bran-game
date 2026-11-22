@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { createGame, EMPIRE2_RULES, empire2Geo } from "@/lib/empire2";
-import { EMPIRE2_TURN_SPEEDS, playtestRules } from "@/lib/empire2-playtest";
+import { EMPIRE2_TURN_SPEEDS, empire2TurnMs, playtestRules } from "@/lib/empire2-playtest";
 
 test("playtestRules matches scripts/empire2-sim/rules-candidate.json on top of EMPIRE2_PLAY_RULES", () => {
   const candidate = JSON.parse(readFileSync(`${process.cwd()}/scripts/empire2-sim/rules-candidate.json`, "utf8")) as Record<string, number>;
@@ -28,6 +28,11 @@ test("createGame with playtestRules keeps the play rules (the resolveRules trap)
 
 test("the speed options are the engine's allowed turn lengths", () => {
   for (const speed of EMPIRE2_TURN_SPEEDS) {
+    if (speed.seconds === 0) {
+      // No time limit: the engine clock is null, which is not a number of milliseconds.
+      assert.equal(empire2TurnMs(speed.seconds), null, `${speed.label} is untimed`);
+      continue;
+    }
     assert.ok(EMPIRE2_RULES.allowedTurnMs.includes(speed.seconds * 1000), `${speed.label} is ${speed.seconds} seconds`);
   }
 });

@@ -5,7 +5,7 @@ import type { CountryCode, EmpireState, EngineError, EngineErrorCode, PlayerId, 
 const MESSAGES: Record<EngineErrorCode, string> = {
   badPlayerCount: "Empire needs 2 to 4 players.",
   duplicatePlayer: "Two players have the same id.",
-  badTurnMs: "Pick 20, 30 or 45 seconds.",
+  badTurnMs: "Pick 20, 30 or 45 seconds, or no time limit.",
   wrongPhase: "That can't be done right now.",
   gameOver: "The game is over.",
   notYourTurn: "It's not your turn.",

@@ -1,4 +1,5 @@
 import { findClaimableBounty } from "./bounties";
+import { clockExpired } from "./clock";
 import type { Empire2Geo } from "./geo-adapter";
 import { actionCosts, colonizePrice, reliefAvailable } from "./economy";
 import { annexProtection, type ProtectionReason } from "./protection";
@@ -209,7 +210,7 @@ export function applyPlayAction(state: EmpireState, playerId: PlayerId, action: 
     const pick = state.boomPick;
     if (playerId !== pick.playerId) return engineError("notYourPick");
     if (type !== "pickBoom") return engineError("boomPickFirst");
-    if (ctx.now >= pick.startedAt + state.turnMs) return engineError("turnExpired");
+    if (clockExpired(ctx.now, pick.startedAt, state.turnMs)) return engineError("turnExpired");
     const region = (action as unknown as { region?: unknown }).region;
     if (typeof region !== "string" || !new Set(ctx.geo.regionNames()).has(region)) return engineError("unknownRegion");
     return { ok: true, state: applyBoomPick(state, ctx, region, "player", ctx.now) };
@@ -219,7 +220,7 @@ export function applyPlayAction(state: EmpireState, playerId: PlayerId, action: 
   const turn = state.turn;
   if (turn === null) return engineError("wrongPhase");
   if (turn.playerId !== playerId) return engineError("notYourTurn");
-  if (ctx.now >= turn.startedAt + state.turnMs) return engineError("turnExpired");
+  if (clockExpired(ctx.now, turn.startedAt, state.turnMs)) return engineError("turnExpired");
 
   const raw = action as unknown as { code?: unknown; capital?: unknown };
   switch (type) {

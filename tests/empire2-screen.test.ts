@@ -431,3 +431,46 @@ test("a failed log download shows a notice", async () => {
   await flush();
   assert.match(doc.body.textContent ?? "", /Could not download the log\. Try again\./);
 });
+
+// ---------- no time limit (UI) ----------
+
+const UNTIMED = { turnMs: null, deadline: null };
+
+test("untimed-ui-19 the lobby offers No time limit as a fourth Empire 2.0 speed, shown as NO CLOCK", () => {
+  const doc = mountHome();
+  click(doc, "Empire 2.0 (playtest)", true);
+  for (const label of ["Quick", "Standard", "Relaxed", "No time limit"]) assert.ok(buttonNamed(doc, label, true), label);
+  click(doc, "No time limit", true);
+  assert.equal(buttonNamed(doc, "No time limit", true)!.getAttribute("aria-pressed"), "true");
+  assert.equal(buttonNamed(doc, "Standard", true)!.getAttribute("aria-pressed"), "false");
+  assert.match(doc.body.textContent ?? "", /NO CLOCK/);
+  assert.match(doc.body.textContent ?? "", /TIME PER TURN/);
+});
+
+test("untimed-ui-20 the lobby tag reads No time limit for a room with turnSeconds 0", async () => {
+  const room = {
+    code: "ABC234", gameId: "countries", mode: "empire2", turnSeconds: 0, status: "waiting", startedAt: null, playerId: "b",
+    underdogBoomPick: false, myGuesses: [], players: roster
+  };
+  globalThis.fetch = (async () => new Response(JSON.stringify(room), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+  const doc = mountHome({ code: "ABC234", token: TOKEN, playerId: "b", name: "Ben" });
+  await flush();
+  const tag = doc.querySelector(".mode-tag")?.textContent ?? "";
+  assert.match(tag, /· No time limit/);
+  assert.doesNotMatch(tag, /0s turns/);
+});
+
+test("untimed-ui-21 the game banner shows No time limit and no clock, with no NaN anywhere", () => {
+  const html = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view(UNTIMED), "a")));
+  assert.match(html, /<div class="e2-nolimit">No time limit<\/div>/);
+  assert.doesNotMatch(html, /turn-clock/, "no countdown element");
+  assert.doesNotMatch(html, /NaN/);
+});
+
+test("untimed-ui-22 How to play states the untimed rule only when the game is untimed", () => {
+  const untimed = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view(UNTIMED), "a")));
+  assert.match(text(untimed), /Time: no time limit\. Take as long as you need\./);
+  assert.doesNotMatch(text(untimed), /each turn has a clock/);
+  const timed = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view(), "a")));
+  assert.match(text(timed), /Time: each turn has a clock\./);
+});

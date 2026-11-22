@@ -137,7 +137,7 @@ export type PlaySpec = {
   round?: number;
   indexInRound?: number;
   now?: number;
-  turnMs?: number;
+  turnMs?: number | null;
   booms?: string[];
   bounties?: BountyCard[];
   event?: EventKind | null;
@@ -185,7 +185,7 @@ export function buildPlayState(spec: PlaySpec): EmpireState {
     version: 1,
     phase: "play",
     rules,
-    turnMs: spec.turnMs ?? 30000,
+    turnMs: spec.turnMs === undefined ? 30000 : spec.turnMs,   // not ??: null is the untimed game
     players,
     owners,
     cities: cities.sort(),

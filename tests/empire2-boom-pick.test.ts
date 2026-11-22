@@ -158,8 +158,8 @@ test("pickBoom is refused outside a pick (rule off, or during a normal turn)", (
 test("a timed-out pick uses bestBoomPick, and the round goes on", () => {
   const s = pendingRound2(15, 1000);
   assert.equal(s.boomPick?.startedAt, 1000);
-  assert.equal(advanceTimeouts(s, ctxAt(miniGeo, 1000 + s.turnMs - 1)), s, "not expired yet");
-  const at = 1000 + s.turnMs;
+  assert.equal(advanceTimeouts(s, ctxAt(miniGeo, 1000 + s.turnMs! - 1)), s, "not expired yet");
+  const at = 1000 + s.turnMs!;
   const timed = advanceTimeouts(s, ctxAt(miniGeo, at, mulberry32(16)));
   assert.equal(timed.boomPick?.by, "timeout");
   assert.equal(timed.boomPick?.region, "Gamma West", "p1 owns G1 and G2 in Gamma West: the best payout");
@@ -171,7 +171,7 @@ test("a timed-out pick uses bestBoomPick, and the round goes on", () => {
   const logged = timed.log.find((e) => e.type === "boomPick");
   assert.equal(logged?.auto, true);
   // The round continues: the first turn times out in turn and the second player takes over.
-  const next = advanceTimeouts(timed, ctxAt(miniGeo, at + timed.turnMs, mulberry32(17)));
+  const next = advanceTimeouts(timed, ctxAt(miniGeo, at + timed.turnMs!, mulberry32(17)));
   assert.equal(next.turn?.playerId, "p0");
   assert.equal(next.phase, "play");
 });

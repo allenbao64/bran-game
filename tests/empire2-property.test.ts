@@ -39,7 +39,7 @@ function playGame(seed: number, playerCount: number): Result {
 
     // Lazy clock catch-up, as the server does before any action. Every 12th action jumps past the deadline.
     if (actions % 12 === 0 && state.phase === "play" && state.turn !== null) {
-      now = Math.max(now, state.turn.startedAt + state.turnMs);
+      now = Math.max(now, state.turn.startedAt + state.turnMs!);
     }
     const caught = advanceTimeouts(state, ctx());
     if (caught !== state) {

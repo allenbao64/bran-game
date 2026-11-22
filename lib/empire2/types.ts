@@ -168,7 +168,7 @@ export type EmpireState = {
   version: 1;
   phase: "setup" | "play" | "finished";
   rules: Rules;
-  turnMs: number;
+  turnMs: number | null;           // null = no time limit
   players: PlayerState[];          // in seat order
   owners: Record<CountryCode, PlayerId>;
   cities: CountryCode[];           // sorted ascending; each is owned by someone; never changes owner
@@ -218,6 +218,6 @@ export type ActionResult = Ok<{ state: EmpireState }> | Fail;
 
 export type GameConfig = {
   playerIds: PlayerId[];           // seat order = array order; the server shuffles before calling
-  turnMs?: number;                 // default rules.defaultTurnMs; must be in rules.allowedTurnMs unless `rules.allowedTurnMs` is overridden (tests)
+  turnMs?: number | null;         // null = no time limit; undefined = rules.defaultTurnMs; must be in rules.allowedTurnMs unless `rules.allowedTurnMs` is overridden (tests)
   rules?: Partial<Rules>;          // tests only (e.g. winPoints: 5)
 };

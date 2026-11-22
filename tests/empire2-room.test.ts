@@ -706,3 +706,86 @@ test("a read whose save keeps conflicting returns the stored room, not an unsave
   assert.equal(view.round, stored.round);
   assert.equal(view.log.some((line: string) => /time ran out/i.test(line)), false, "the timeout was not applied");
 });
+
+// ---------- no time limit (turnSeconds 0) ----------
+
+/** Every numeric field the view promises is a number, and no clock runs when untimed. */
+function assertUntimedView(view: View, name: string) {
+  assert.equal(view.turnMs, null, `${name}: turnMs is null`);
+  assert.equal(view.deadline, null, `${name}: no deadline`);
+  for (const key of ["round", "roundCap", "winPoints", "serverNow"] as const) {
+    assert.equal(typeof view[key], "number", `${name}: ${key} is a number`);
+    assert.ok(Number.isFinite(view[key] as number), `${name}: ${key} is finite`);
+  }
+}
+
+test("untimed-room-13 create with turnSeconds 0 stores and returns 0", async () => {
+  const response = await postRoom({ action: "create", name: "Host", mode: "empire2", turnSeconds: 0 });
+  assert.equal(response.status, 200);
+  const host = await json(response) as Session & { turnSeconds?: number };
+  assert.equal(host.turnSeconds, 0, "create response");
+  assert.equal((await getRoom(host)).turnSeconds, 0, "stored room and GET keep 0");
+});
+
+test("untimed-room-14 join and start responses carry turnSeconds 0", async () => {
+  const host = await json(await postRoom({ action: "create", name: "Host", mode: "empire2", turnSeconds: 0 })) as Session;
+  const joined = await json(await postRoom({ action: "join", code: host.code, name: "Brian" })) as { turnSeconds?: number };
+  assert.equal(joined.turnSeconds, 0, "join response");
+  const started = await json(await postRoom({ action: "start", code: host.code, token: host.token, name: "Host" })) as { turnSeconds?: number };
+  assert.equal(started.turnSeconds, 0, "start response");
+});
+
+test("untimed-room-15 invalid speeds are still rejected with the new message", async () => {
+  for (const bad of [25, -1, "0", null, 1.5]) {
+    const response = await postRoom({ action: "create", name: "Host", mode: "empire2", turnSeconds: bad });
+    assert.equal(response.status, 400, `turnSeconds ${JSON.stringify(bad)}`);
+    assert.equal((await json(response)).error, "Choose a turn time of 20, 30 or 45 seconds, or no time limit.");
+  }
+});
+
+test("untimed-room-16 an untimed game never times out, even after ten years", async () => {
+  const sessions = await empire2Game(2, { turnSeconds: 0 });
+  await finishSetup(sessions);
+  const before = await viewOf(sessions[0]);
+  assertUntimedView(before, "before");
+  clock += 10 * 365 * 24 * 3600 * 1000;
+  const after = await viewOf(sessions[0]);
+  assertUntimedView(after, "after ten years");
+  assert.equal(after.currentPlayerId, before.currentPlayerId, "the turn did not pass");
+  assert.equal(after.round, before.round, "the round did not change");
+  assert.ok(!after.log.some((line: string) => line.includes("Time ran out")), "no timeout line");
+  // The turn player can still act.
+  const player = sessionFor(sessions, after.currentPlayerId);
+  assert.equal((await act(player, chooseMove(await viewOf(player)))).status, 200, "the turn player can still act");
+});
+
+test("untimed-room-17 setup waits for the picker and is never auto-picked", async () => {
+  const sessions = await empire2Game(2, { turnSeconds: 0 });
+  const first = await viewOf(sessions[0]);
+  assert.equal(first.phase, "capital");
+  clock += 10 * 365 * 24 * 3600 * 1000;
+  const later = await viewOf(sessions[0]);
+  assert.equal(later.phase, "capital", "still in setup");
+  assert.equal(later.setup?.step, "capital", "the same setup step");
+  assert.deepEqual(later.setup?.offers ?? null, first.setup?.offers ?? null, "the offers did not change");
+  assertUntimedView(later, "setup");
+});
+
+test("untimed-room-18 the host can end an untimed game and see results", async () => {
+  const sessions = await empire2Game(2, { turnSeconds: 0 });
+  await finishSetup(sessions);
+  clock += 10 * 365 * 24 * 3600 * 1000;
+  const host = sessions[0];
+  assert.equal((await postRoom({ action: "end", code: host.code, token: host.token, name: "Host" })).status, 200);
+  const view = await viewOf(host);
+  assert.equal(view.phase, "ended");
+  assert.equal(view.result.reason, "hostEnded");
+});
+
+test("untimed-room-19 the log export carries turnMs null and the boom option", async () => {
+  const sessions = await empire2Game(2, { turnSeconds: 0, underdogBoomPick: true });
+  await finishSetup(sessions);
+  const log = await json(await getLog(sessions[0]));
+  assert.equal(log.turnMs, null);
+  assert.equal(log.underdogBoomPick, true);
+});

@@ -63,10 +63,10 @@ export async function POST(request: NextRequest) {
         const code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
         const token = randomUUID() + randomUUID();
         const player: Player = { id: randomUUID(), token, name, host: true };
-        const room: Room = { code, gameId, mode, ...(turnSeconds ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), ...(empire2Options ? { empire2Options } : {}), status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
+        const room: Room = { code, gameId, mode, ...(turnSeconds !== undefined ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), ...(empire2Options ? { empire2Options } : {}), status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
         const created = await redis.set(roomKey(code), room, { ex: ROOM_TTL_SECONDS, nx: true });
         if (created) return NextResponse.json({
-          code, gameId, mode, ...(turnSeconds ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), token, playerId: player.id, status: room.status,
+          code, gameId, mode, ...(turnSeconds !== undefined ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), token, playerId: player.id, status: room.status,
           startedAt: room.startedAt, players: publicPlayers(room.players)
         });
       }
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
       if (started.error) return error(started.error);
       if (!started.ok) return error("Could not start this round. Please try again.");
       if (turnsRoom && started.startedAt && started.players) await logGameStart(redis, turnsRoom, { startedAt: started.startedAt, players: started.players }, starts);
-      return NextResponse.json({ code, gameId: started.gameId ?? "countries", mode: started.mode ?? "live", ...(existing?.turnSeconds && (isTurnsRoom(existing) || isEmpireRoom(existing) || isEmpire2Room(existing)) ? { turnSeconds: existing.turnSeconds } : {}), ...(existing && isTurnsRoom(existing) ? { rounds: existing.rounds ?? LEGACY_TURN_ROUNDS } : {}), status: started.status, startedAt: started.startedAt, players: started.players });
+      return NextResponse.json({ code, gameId: started.gameId ?? "countries", mode: started.mode ?? "live", ...(existing?.turnSeconds !== undefined && (isTurnsRoom(existing) || isEmpireRoom(existing) || isEmpire2Room(existing)) ? { turnSeconds: existing.turnSeconds } : {}), ...(existing && isTurnsRoom(existing) ? { rounds: existing.rounds ?? LEGACY_TURN_ROUNDS } : {}), status: started.status, startedAt: started.startedAt, players: started.players });
     }
 
     if (body.action === "end") {
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
     const joined = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; turnSeconds?: number; rounds?: number; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> }>(result);
     if (joined.error) return error(joined.error);
     if (!joined.ok) return error("Could not join that room. Please try again.");
-    return NextResponse.json({ code, gameId: joined.gameId ?? "countries", mode: joined.mode ?? "live", ...(joined.turnSeconds ? { turnSeconds: joined.turnSeconds } : {}), ...(joined.mode === "turns" ? { rounds: joined.rounds ?? LEGACY_TURN_ROUNDS } : {}), token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
+    return NextResponse.json({ code, gameId: joined.gameId ?? "countries", mode: joined.mode ?? "live", ...(joined.turnSeconds !== undefined ? { turnSeconds: joined.turnSeconds } : {}), ...(joined.mode === "turns" ? { rounds: joined.rounds ?? LEGACY_TURN_ROUNDS } : {}), token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
   } catch (cause) {
     console.error("Room POST failed:", cause);
     return error(`The room service is unavailable${errorDetail(cause)}. Try again in a moment.`, 503);

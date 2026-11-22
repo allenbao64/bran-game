@@ -53,7 +53,7 @@ function Breakdown({ player }: { player: Empire2ViewPlayer }) {
 }
 
 /** The rules, read from the playtest rules object so no number is typed here. */
-function HowToPlay({ underdogBoomPick }: { underdogBoomPick: boolean }) {
+function HowToPlay({ underdogBoomPick, untimed }: { underdogBoomPick: boolean; untimed: boolean }) {
   const rules = playtestRules(underdogBoomPick);
   return <details className="e2-how"><summary>How to play</summary><ul>
     <li>Setup: each player picks a home country from {rules.capitalOffers} offers, then an outpost: a second country that doesn't touch a rival. Everyone starts with {rules.startInfluence} influence.</li>
@@ -69,7 +69,7 @@ function HowToPlay({ underdogBoomPick }: { underdogBoomPick: boolean }) {
     <li>Events: every {rules.eventEvery}th round a world event applies to the next round.</li>
     <li>Boom regions: {rules.boomRegionCount} regions pay bonus income each round to owners of land there.</li>
     {underdogBoomPick && <li>Boom region pick: the player with the fewest points picks this round's boom region.</li>}
-    <li>Time: each turn has a clock. When it runs out your turn ends.</li>
+    <li>{untimed ? "Time: no time limit. Take as long as you need. Only the host can end the game." : "Time: each turn has a clock. When it runs out your turn ends."}</li>
   </ul></details>;
 }
 
@@ -138,7 +138,7 @@ export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onA
     <div className="e2-main">
       <div className={mine ? "turn-banner mine e2-banner" : "turn-banner e2-banner"} style={mine ? { background: color, borderColor: color } : { borderLeftColor: color }}>
         <div className="e2-banner-text"><b className="turn-banner-text" style={mine ? undefined : { color }}>{title}</b><small>{sub}</small></div>
-        {seconds !== null && <div className={seconds <= 10 ? "turn-clock urgent" : "turn-clock"} aria-label="Seconds left">{seconds}s</div>}
+        {view.turnMs === null ? <div className="e2-nolimit">No time limit</div> : seconds !== null && <div className={seconds <= 10 ? "turn-clock urgent" : "turn-clock"} aria-label="Seconds left">{seconds}s</div>}
       </div>
       <WorldMap claims={view.owners} players={players} youId={playerId} heading="WORLD MAP" highlight={view.frontier} cities={view.cities}/>
       {view.phase !== "ended" && <p className="e2-legend">Outlined: you can expand there. Square: stronghold.</p>}
@@ -183,7 +183,7 @@ export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onA
       {view.booms.length > 0 && view.phase !== "boomPick" && <p className="e2-line">{`Booms: ${view.booms.join(", ")}`}</p>}
       {view.bounties.length > 0 && <p className="e2-line">{`Bounties: ${view.bounties.map((card) => card.label).join(", ")}`}</p>}
       {view.log.length > 0 && <section className="e2-recent"><div className="aside-title">Recent</div>{view.log.map((line, index) => <p key={index}>{line}</p>)}</section>}
-      <HowToPlay underdogBoomPick={view.underdogBoomPick}/>
+      <HowToPlay underdogBoomPick={view.underdogBoomPick} untimed={view.turnMs === null}/>
       {host && view.phase !== "ended" && <button type="button" className="quiet e2-end" disabled={busy} onClick={onEnd}>End game and show results</button>}
     </aside>
   </div>;

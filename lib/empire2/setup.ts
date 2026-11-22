@@ -70,8 +70,9 @@ export function createGame(config: GameConfig, ctx: Ctx): Ok<{ state: EmpireStat
   const ids: PlayerId[] = Array.isArray(config.playerIds) ? config.playerIds : [];
   if (ids.length < rules.minPlayers || ids.length > rules.maxPlayers) return engineError("badPlayerCount");
   if (new Set(ids).size !== ids.length) return engineError("duplicatePlayer");
-  const turnMs = config.turnMs ?? rules.defaultTurnMs;
-  if (!rules.allowedTurnMs.includes(turnMs)) return engineError("badTurnMs");
+  // Not `??`: null means no time limit and must stay null. Only undefined takes the default.
+  const turnMs = config.turnMs === undefined ? rules.defaultTurnMs : config.turnMs;
+  if (turnMs !== null && !rules.allowedTurnMs.includes(turnMs)) return engineError("badTurnMs");
 
   const players = ids.map((id, seat) => ({
     id,

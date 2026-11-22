@@ -221,7 +221,7 @@ export function playGame(o: PlayOptions): GameRecord {
     const u = slowRng();
     if (u < o.slowP) {
       const before: EmpireState = state;
-      state = advanceTimeouts(state, { geo, rng: engineRng, now: turn0.startedAt + state.turnMs });
+      state = advanceTimeouts(state, { geo, rng: engineRng, now: turn0.startedAt + state.turnMs! });
       col.step(before, state, "timeout");
       o.onStep?.(before, state);
       continue;

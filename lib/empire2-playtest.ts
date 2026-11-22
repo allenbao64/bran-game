@@ -9,13 +9,18 @@ export function playtestRules(underdogBoomPick: boolean): Rules {
   return { ...EMPIRE2_PLAY_RULES, ...EMPIRE2_PLAYTEST_OVERRIDES, underdogBoomPick };
 }
 
+/** Host-picked clock. seconds 0 means no time limit (the wire and room value; the engine uses null). */
 export const EMPIRE2_TURN_SPEEDS = [
   { id: "quick", label: "Quick", seconds: 20 },
   { id: "standard", label: "Standard", seconds: 30 },
   { id: "relaxed", label: "Relaxed", seconds: 45 },
+  { id: "untimed", label: "No time limit", seconds: 0 },
 ] as const;
 export const DEFAULT_EMPIRE2_TURN_SECONDS = 30;
 export const isEmpire2TurnSeconds = (value: unknown): value is number => EMPIRE2_TURN_SPEEDS.some((s) => s.seconds === value);
+
+/** Host seconds (0 = no time limit) to the engine clock: null when untimed. */
+export function empire2TurnMs(seconds: number): number | null { return seconds === 0 ? null : seconds * 1000; }
 
 export type Empire2Phase = "capital" | "foothold" | "boomPick" | "playing" | "ended";
 export type Empire2Action =
@@ -39,7 +44,7 @@ export type Empire2View = {
   viewerId: string;
   currentPlayerId: string | null;
   round: number; roundCap: number; winPoints: number;
-  turnMs: number;
+  turnMs: number | null;                                       // null = no time limit
   deadline: number | null;                                     // server ms; null when no clock runs
   serverNow: number;                                           // server ms at the read
   underdogBoomPick: boolean;

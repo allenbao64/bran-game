@@ -1,4 +1,5 @@
 import { drawBounties } from "./bounties";
+import { clockDeadline } from "./clock";
 import type { Ctx, EmpireState, GameResult, IncomeBreakdown, PlayerId } from "./types";
 import { computeIncome, drawBooms, drawBoomsExcept } from "./economy";
 import { bestBoomPick, boomPickerId } from "./boom-pick";
@@ -199,19 +200,20 @@ export function endTurn(
  * clock runs out, the engine makes it with bestBoomPick and the round goes on.
  */
 export function advanceTimeouts(state: EmpireState, ctx: Ctx): EmpireState {
+  if (state.turnMs === null) return state; // no time limit: nothing ever times out
   let s = state;
   let guard = 0;
   while (s.phase === "play" && guard < 1000) {
     if (isBoomPickPending(s) && s.boomPick !== undefined) {
-      const deadline = s.boomPick.startedAt + s.turnMs;
-      if (ctx.now < deadline) break;
+      const deadline = clockDeadline(s.boomPick.startedAt, s.turnMs);
+      if (deadline === null || ctx.now < deadline) break;
       guard += 1;
       s = applyBoomPick(s, ctx, bestBoomPick(s, s.boomPick.playerId, ctx.geo), "timeout", deadline);
       continue;
     }
     if (s.turn === null) break;
-    const deadline = s.turn.startedAt + s.turnMs;
-    if (ctx.now < deadline) break;
+    const deadline = clockDeadline(s.turn.startedAt, s.turnMs);
+    if (deadline === null || ctx.now < deadline) break;
     guard += 1;
     s = endTurn(s, ctx, "timeout", deadline);
   }
