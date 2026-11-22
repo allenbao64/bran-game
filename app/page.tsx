@@ -14,6 +14,8 @@ import { claimFitNote, claimRegionNote, TURN_RULES_LINE, DEFAULT_TURN_ROUNDS, DE
 import { DEFAULT_EMPIRE_TURN_SECONDS, EMPIRE_TURN_SPEEDS } from "@/lib/empire/types";
 import { DEFAULT_EMPIRE2_TURN_SECONDS, EMPIRE2_TURN_SPEEDS, playtestRules, type Empire2Action, type Empire2View } from "@/lib/empire2-playtest";
 import { Empire2Game, Empire2Results } from "@/app/empire2-game";
+import { Empire2Tutorial } from "@/app/empire2-tutorial";
+import { markTutorialSeen, tutorialSeen } from "@/lib/empire2-tutorial";
 
 type Player = { id: string; name: string; host: boolean };
 type Answer = { code: string; name: string };
@@ -66,6 +68,10 @@ export default function Home() {
   const [stage, setStage] = useState<Stage>("home");
   const [selectedGame, setSelectedGame] = useState<GameId>("countries");
   const [selectedMode, setSelectedMode] = useState<Mode>("live");
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [tutorialPrompt, setTutorialPrompt] = useState(false);
+  // First time Empire 2.0 is picked on this browser: offer the tutorial once (remembered in localStorage).
+  useEffect(() => { if (selectedMode === "empire2" && !tutorialSeen()) setTutorialPrompt(true); }, [selectedMode]);
   const [selectedSpeed, setSelectedSpeed] = useState<number>(DEFAULT_TURN_SECONDS);
   const [selectedRounds, setSelectedRounds] = useState<number>(DEFAULT_TURN_ROUNDS);
   const [selectedEmpireSpeed, setSelectedEmpireSpeed] = useState<number>(DEFAULT_EMPIRE_TURN_SECONDS);
@@ -319,6 +325,7 @@ export default function Home() {
   const modeRules = (mode: Mode) => MODE_RULES[mode];
 
   return <main className="shell">
+    {tutorialOpen && <Empire2Tutorial onClose={() => setTutorialOpen(false)}/>}
     <header className="topbar"><a className="brand" href="/"><span className="mark">A</span> ATLAS <b>SPRINT</b></a><div className="top-meta"><span className="build-version" title={`Deployed commit ${BUILD_VERSION}`}>BUILD {BUILD_VERSION.slice(0, 7)}</span></div></header>
     <section className="content">
     {stage === "home" && <div className="home-grid">
@@ -351,6 +358,10 @@ export default function Home() {
         </div><small className="e2-hint">The player with the fewest points picks one of this round&apos;s boom regions.</small></div>}{selectedMode === "turns" && <div role="group" aria-label="Choose the number of rounds"><span className="mode-label">ROUNDS</span><div className="speed-picker">
           {TURN_ROUND_OPTIONS.map((rounds) => <button type="button" className={`speed-option${selectedRounds === rounds ? " selected" : ""}`} key={rounds} aria-pressed={selectedRounds === rounds} onClick={() => setSelectedRounds(rounds)}><b>{rounds}</b><small>ROUNDS</small></button>)}
         </div></div>}</div>}
+        {selectedGame === "countries" && selectedMode === "empire2" && <div className="e2-tut-entry">
+          {tutorialPrompt && <p className="e2-prompt" role="note">New to Empire? Try the 1-minute tutorial. <button type="button" className="primary" onClick={() => { markTutorialSeen(); setTutorialPrompt(false); setTutorialOpen(true); }}>Start</button> <button type="button" className="quiet" onClick={() => { markTutorialSeen(); setTutorialPrompt(false); }}>Not now</button></p>}
+          <button type="button" className="quiet" onClick={() => setTutorialOpen(true)}>Tutorial</button>
+        </div>}
         <label htmlFor="name">DISPLAY NAME</label><input id="name" className="field" maxLength={18} placeholder="Your name" value={name} onChange={(event) => setName(event.target.value)}/>
         <button className="primary" disabled={!ready || busy} onClick={(event) => void startRoom(event as unknown as FormEvent, "create")}>Create room</button>
         <div className="or">OR</div><form onSubmit={(event) => void startRoom(event, "join")}><label htmlFor="room">ROOM CODE</label><div className="join-row"><input id="room" className="field code" maxLength={6} placeholder="ABC123" value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())}/><button className="join" disabled={!ready || joinCode.trim().length !== 6 || busy}>Join</button></div></form>
@@ -365,7 +376,7 @@ export default function Home() {
     {stage === "game" && room && isTurns && !turn && <p className="lede">Dealing the first card…</p>}
     {stage === "game" && room && isEmpire && empire && <EmpireGame view={empire} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} notice={notice} busy={busy} onAction={empireAction} onNotice={setNotice} onEnd={() => void endRound()} colorOf={colorOf}/>}
     {stage === "game" && room && isEmpire && !empire && <p className="lede">Placing capitals…</p>}
-    {stage === "game" && room && isEmpire2 && empire2 && <Empire2Game view={empire2} players={players} playerId={playerId} skewMs={skewMs} notice={notice} busy={busy} onAction={empire2Action} onNotice={setNotice} onEnd={() => void endRound()}/>}
+    {stage === "game" && room && isEmpire2 && empire2 && <Empire2Game view={empire2} players={players} playerId={playerId} skewMs={skewMs} notice={notice} busy={busy} onAction={empire2Action} onNotice={setNotice} onEnd={() => void endRound()} onOpenTutorial={() => setTutorialOpen(true)}/>}
     {stage === "game" && room && isEmpire2 && !empire2 && <p className="lede">Starting the game…</p>}
     {stage === "game" && room && !isTurns && !isEmpire && !isEmpire2 && <div className="game"><section><div className="game-head"><h1>{activeGame.title}</h1><div className={left < 30 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div>
       {room.gameId === "countries" && <div className="live-map"><WorldMap claims={countryClaims} players={players} youId={playerId}/>

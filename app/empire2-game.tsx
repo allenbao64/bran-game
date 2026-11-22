@@ -12,6 +12,7 @@ type GameProps = {
   view: Empire2View; players: Empire2Player[]; playerId: string; skewMs: number;
   notice: string; busy: boolean;
   onAction: (action: Empire2Action) => Promise<boolean>; onNotice: (text: string) => void; onEnd: () => void;
+  onOpenTutorial?: () => void;
 };
 type ResultsProps = { view: Empire2View; players: Empire2Player[]; playerId: string; onDownloadLog: () => void; onLeave: () => void; notice?: string };
 
@@ -53,9 +54,9 @@ function Breakdown({ player }: { player: Empire2ViewPlayer }) {
 }
 
 /** The rules, read from the playtest rules object so no number is typed here. */
-function HowToPlay({ underdogBoomPick, untimed }: { underdogBoomPick: boolean; untimed: boolean }) {
+function HowToPlay({ underdogBoomPick, untimed, onOpenTutorial }: { underdogBoomPick: boolean; untimed: boolean; onOpenTutorial?: () => void }) {
   const rules = playtestRules(underdogBoomPick);
-  return <details className="e2-how"><summary>How to play</summary><ul>
+  return <details className="e2-how"><summary>How to play</summary>{onOpenTutorial && <button type="button" className="quiet e2-tut-open" onClick={onOpenTutorial}>Open the tutorial</button>}<ul>
     <li>Setup: each player picks a home country from {rules.capitalOffers} offers, then an outpost: a second country that doesn't touch a rival. Everyone starts with {rules.startInfluence} influence.</li>
     <li>Each round: everyone collects influence. Then each player takes a turn. Players with fewer points go first and the leader goes last.</li>
     <li>Expand: take a free country that touches your empire. Your first expand each turn is free. The second costs {rules.expandCost}. Up to {rules.maxExpandsPerTurn} a turn.</li>
@@ -74,7 +75,7 @@ function HowToPlay({ underdogBoomPick, untimed }: { underdogBoomPick: boolean; u
 }
 
 /** The in-game screen for Empire 2.0: banner and clock, map, the action for this phase, then scores and log. */
-export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onAction, onNotice, onEnd }: GameProps) {
+export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onAction, onNotice, onEnd, onOpenTutorial }: GameProps) {
   const [, setTick] = useState(0);
   const clocked = view.deadline !== null;
   useEffect(() => {
@@ -183,7 +184,7 @@ export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onA
       {view.booms.length > 0 && view.phase !== "boomPick" && <p className="e2-line">{`Booms: ${view.booms.join(", ")}`}</p>}
       {view.bounties.length > 0 && <p className="e2-line">{`Bounties: ${view.bounties.map((card) => card.label).join(", ")}`}</p>}
       {view.log.length > 0 && <section className="e2-recent"><div className="aside-title">Recent</div>{view.log.map((line, index) => <p key={index}>{line}</p>)}</section>}
-      <HowToPlay underdogBoomPick={view.underdogBoomPick} untimed={view.turnMs === null}/>
+      <HowToPlay underdogBoomPick={view.underdogBoomPick} untimed={view.turnMs === null} onOpenTutorial={onOpenTutorial}/>
       {host && view.phase !== "ended" && <button type="button" className="quiet e2-end" disabled={busy} onClick={onEnd}>End game and show results</button>}
     </aside>
   </div>;
