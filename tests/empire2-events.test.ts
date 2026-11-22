@@ -117,9 +117,9 @@ test("event-09 closed borders", () => {
 });
 
 test("event-10 eventLabel strings", () => {
-  assert.equal(eventLabel("tradeWinds"), "Trade winds: colonizing costs 2");
-  assert.equal(eventLabel("ceasefire"), "Ceasefire: no annexing");
-  assert.equal(eventLabel("goldenAge"), "Golden age: cities pay 2");
+  assert.equal(eventLabel("tradeWinds"), "Trade winds: settling costs 2");
+  assert.equal(eventLabel("ceasefire"), "Ceasefire: no take-overs");
+  assert.equal(eventLabel("goldenAge"), "Golden age: strongholds pay 2");
   assert.equal(eventLabel("goldRush"), "Gold rush: bounties pay 4");
   assert.equal(eventLabel("closedBorders"), "Closed borders: expanding costs 1 more");
 });

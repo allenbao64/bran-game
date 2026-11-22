@@ -213,7 +213,7 @@ test("bounty-12 bountyLabel strings", () => {
   assert.equal(bountyLabel({ id: "x", kind: "island", value: null }), "Island nation");
   assert.equal(bountyLabel({ id: "x", kind: "short", value: 5 }), "5 letters or fewer");
   assert.equal(bountyLabel({ id: "x", kind: "long", value: 9 }), "9 letters or more");
-  assert.equal(bountyLabel({ id: "x", kind: "continent", value: "Africa" }), "In Africa");
-  assert.equal(bountyLabel({ id: "x", kind: "region", value: "Western Europe" }), "In Western Europe");
+  assert.equal(bountyLabel({ id: "x", kind: "continent", value: "Africa" }), "On the continent: Africa");
+  assert.equal(bountyLabel({ id: "x", kind: "region", value: "Western Europe" }), "In region: Western Europe");
 });
 

@@ -241,7 +241,7 @@ test("every action type is accepted when legal and rejected with the right statu
   await expectError(rival, { type: "expand", code: "FR" }, 409, "It's not your turn.");
   await expectError(turnPlayer, { type: "expand", code: "ZZ" }, 400, "That isn't a country in the game.");
   const notFrontier = empire2Geo.codes().find((code) => !mine.frontier.includes(code) && !mine.owners[code])!;
-  await expectError(turnPlayer, { type: "expand", code: notFrontier }, 409, "That country doesn't border your empire.");
+  await expectError(turnPlayer, { type: "expand", code: notFrontier }, 409, "That country doesn't touch your empire.");
   await expectError(turnPlayer, { type: "pickCapital", code: "FR" }, 409, "That can't be done right now.");
   await expectError(turnPlayer, { type: "nope" }, 400, "That action isn't valid.");
   assert.equal((await act(turnPlayer, { type: "expand", code: mine.legal.expand[0] })).status, 200, "the first expand is free");
@@ -254,7 +254,7 @@ test("every action type is accepted when legal and rejected with the right statu
   const owned = Object.keys(afterSecond.owners).filter((code) => afterSecond.owners[code] === turnPlayer.playerId);
   const rivalOwned = Object.keys(afterSecond.owners).filter((code) => afterSecond.owners[code] === rival.playerId);
   assert.ok(owned.length > 0 && rivalOwned.length > 0);
-  await expectError(turnPlayer, { type: "city", code: owned[0], capital: "Nowhere" }, 400, "That's not the capital.");
+  await expectError(turnPlayer, { type: "city", code: owned[0], capital: "Nowhere" }, 400, "That's not the capital city of that country.");
   await expectError(turnPlayer, { type: "city", code: rivalOwned[0], capital: capitalOf(rivalOwned[0]) }, 409, "You don't own that country.");
   await expectError(turnPlayer, { type: "annex", code: notFrontier, capital: "Nowhere" }, 409, "Name a country a rival owns.");
   assert.equal((await act(turnPlayer, { type: "city", code: owned[0], capital: capitalOf(owned[0]) })).status, 200, "city when legal");
@@ -525,10 +525,10 @@ test("normalisation restores every array field Lua turns into objects", async ()
 test("create rejects bad empire2 options", async () => {
   const badSpeed = await postRoom({ action: "create", name: "Host", mode: "empire2", turnSeconds: 15 });
   assert.equal(badSpeed.status, 400);
-  assert.equal((await json(badSpeed)).error, "Choose an Empire 2.0 turn speed of 20, 30 or 45 seconds.");
+  assert.equal((await json(badSpeed)).error, "Choose a turn time of 20, 30 or 45 seconds, or no time limit.");
   const badBoom = await postRoom({ action: "create", name: "Host", mode: "empire2", underdogBoomPick: "yes" });
   assert.equal(badBoom.status, 400);
-  assert.equal((await json(badBoom)).error, "Choose whether the underdog picks a boom.");
+  assert.equal((await json(badBoom)).error, "Choose whether the lowest player picks the boom region.");
 });
 
 test("a view never carries another player's token or offers", async () => {

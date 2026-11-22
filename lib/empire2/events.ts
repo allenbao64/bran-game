@@ -8,9 +8,9 @@ export function drawEvent(rng: Rng): EventKind {
 }
 
 const LABELS: Record<EventKind, string> = {
-  tradeWinds: "Trade winds: colonizing costs 2",
-  ceasefire: "Ceasefire: no annexing",
-  goldenAge: "Golden age: cities pay 2",
+  tradeWinds: "Trade winds: settling costs 2",
+  ceasefire: "Ceasefire: no take-overs",
+  goldenAge: "Golden age: strongholds pay 2",
   goldRush: "Gold rush: bounties pay 4",
   closedBorders: "Closed borders: expanding costs 1 more",
 };

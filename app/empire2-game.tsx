@@ -28,9 +28,9 @@ function bannerOf(view: Empire2View, playerId: string, nameOf: (id: string | nul
   const actor = view.phase === "boomPick" ? view.boomPick?.playerId ?? null : view.phase === "ended" ? null : view.currentPlayerId;
   const mine = actor !== null && actor === playerId;
   const name = nameOf(actor);
-  const title = view.phase === "capital" ? (mine ? "Pick your capital" : `${name} is picking a capital`)
-    : view.phase === "foothold" ? (mine ? "Place your second foothold" : `${name} is placing a second foothold`)
-    : view.phase === "boomPick" ? (mine ? "Pick this round's boom region" : `${name} is picking a boom`)
+  const title = view.phase === "capital" ? (mine ? "Pick your home country" : `${name} is picking a home country`)
+    : view.phase === "foothold" ? (mine ? "Place your outpost" : `${name} is placing an outpost`)
+    : view.phase === "boomPick" ? (mine ? "Pick this round's boom region" : `${name} is picking the boom region`)
     : view.phase === "playing" ? (mine ? "Your turn" : `${name}'s turn`)
     : "Game over";
   const sub = view.phase === "capital" || view.phase === "foothold" ? "Setup" : roundText(view);
@@ -42,12 +42,12 @@ function Breakdown({ player }: { player: Empire2ViewPlayer }) {
   const { vp, income } = player;
   return <div className="e2-breakdown">
     <span>Countries {player.countries}</span>
-    <span>Cities {player.cities} · {vp.cities} points</span>
-    {vp.regionSets.map((set) => <span key={set.region}>{set.region} set · {set.points} points</span>)}
+    <span>Strongholds {player.cities} · {vp.cities} points</span>
+    {vp.regionSets.map((set) => <span key={set.region}>Full {set.region} · {set.points} points</span>)}
     {vp.largestEmpire > 0 && <span>Largest empire · {vp.largestEmpire} points</span>}
     {income && <>
       <span>Last round's income {income.total}</span>
-      <span>Base {income.base}, territory {income.territory}, cities {income.cities}, boom {income.boom}, underdog {income.underdog}</span>
+      <span>Base {income.base}, land {income.territory}, strongholds {income.cities}, boom {income.boom}, behind the leader {income.underdog}</span>
     </>}
   </div>;
 }
@@ -56,19 +56,19 @@ function Breakdown({ player }: { player: Empire2ViewPlayer }) {
 function HowToPlay({ underdogBoomPick }: { underdogBoomPick: boolean }) {
   const rules = playtestRules(underdogBoomPick);
   return <details className="e2-how"><summary>How to play</summary><ul>
-    <li>Setup: each player picks a capital from {rules.capitalOffers} offers, then a second country that doesn't border a rival. Everyone starts with {rules.startInfluence} influence.</li>
+    <li>Setup: each player picks a home country from {rules.capitalOffers} offers, then an outpost: a second country that doesn't touch a rival. Everyone starts with {rules.startInfluence} influence.</li>
     <li>Each round: everyone collects influence. Then each player takes a turn. Players with fewer points go first and the leader goes last.</li>
-    <li>Expand: take a free country next to your empire. Your first expand each turn is free. The second costs {rules.expandCost}. Up to {rules.maxExpandsPerTurn} a turn.</li>
-    <li>Colonize: take any free country, anywhere, for {rules.colonizeCost}. If no free country touches your empire when your turn starts, your first colonize that turn costs {rules.colonizeReliefCost}.</li>
-    <li>City: {rules.cityCost} influence, in a country you own. Up to {rules.maxCities} cities. A city pays {rules.cityIncome} influence a round and {rules.cityPoints} point.</li>
-    <li>Annex: {rules.annexCost} influence. Take the capital of a rival's country that borders yours, if that rival has at least as many points as you. One annex a turn. Cities, starting countries and countries in a finished region can't be annexed.</li>
-    <li>Income: {rules.baseIncome} base, plus 1 for every {rules.countriesPerTerritory} countries you own, {rules.cityIncome} per city, {rules.boomIncome} for each boom region you hold land in ({rules.boomCityIncome} with a city there). Players {rules.underdogGap} or more points behind the leader get {rules.underdogIncome} more.</li>
-    <li>Bounties: each card names a kind of country. The first player to expand or colonize into one takes {rules.bountyPay} influence.</li>
-    <li>Points: {rules.cityPoints} per city. A finished region gives 2 to 4 points, by size. The largest connected empire of at least {rules.largestEmpireMin} countries gives {rules.largestEmpirePoints} points.</li>
-    <li>Winning: the first player with {rules.winPoints} points at the end of their own turn wins. A second turn in a row can't win on its second turn. After round {rules.roundCap} the most points wins, and ties go to more influence.</li>
+    <li>Expand: take a free country that touches your empire. Your first expand each turn is free. The second costs {rules.expandCost}. Up to {rules.maxExpandsPerTurn} a turn.</li>
+    <li>Settle: take any free country, anywhere, for {rules.colonizeCost}. If no free country touches your empire when your turn starts, your first settle that turn costs {rules.colonizeReliefCost}.</li>
+    <li>Stronghold: {rules.cityCost} influence, in a country you own. Up to {rules.maxCities}. A stronghold pays {rules.cityIncome} influence a round and {rules.cityPoints} point.</li>
+    <li>Take over: {rules.annexCost} influence. Take a rival's country that touches yours, if that rival has at least as many points as you, by naming its capital city. One take-over a turn. Strongholds, home countries, outposts and countries in a full region can't be taken over.</li>
+    <li>Income: {rules.baseIncome} base, plus 1 for every {rules.countriesPerTerritory} countries you own (land), {rules.cityIncome} per stronghold, {rules.boomIncome} for each boom region you hold land in ({rules.boomCityIncome} with a stronghold there). Behind the leader: players {rules.underdogGap} or more points behind get {rules.underdogIncome} more income.</li>
+    <li>Bounties: each card names a kind of country. The first player to expand or settle into one takes {rules.bountyPay} influence.</li>
+    <li>Points: {rules.cityPoints} per stronghold. A full region (you own every country in it) gives 2 to 4 points, by size. The largest connected group of at least {rules.largestEmpireMin} countries gives {rules.largestEmpirePoints} points.</li>
+    <li>Winning: the first player with {rules.winPoints} points at the end of their own turn wins. A back-to-back turn (you went last, then first) can't win on its own. After round {rules.roundCap} the most points wins, and ties go to more influence.</li>
     <li>Events: every {rules.eventEvery}th round a world event applies to the next round.</li>
-    <li>Booms: {rules.boomRegionCount} regions boom each round. Owners of land there are paid.</li>
-    {underdogBoomPick && <li>Boom pick: the player with the fewest points picks this round's boom region.</li>}
+    <li>Boom regions: {rules.boomRegionCount} regions pay bonus income each round to owners of land there.</li>
+    {underdogBoomPick && <li>Boom region pick: the player with the fewest points picks this round's boom region.</li>}
     <li>Time: each turn has a clock. When it runs out your turn ends.</li>
   </ul></details>;
 }
@@ -141,15 +141,15 @@ export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onA
         {seconds !== null && <div className={seconds <= 10 ? "turn-clock urgent" : "turn-clock"} aria-label="Seconds left">{seconds}s</div>}
       </div>
       <WorldMap claims={view.owners} players={players} youId={playerId} heading="WORLD MAP" highlight={view.frontier} cities={view.cities}/>
-      {view.phase !== "ended" && <p className="e2-legend">Outlined: next to your empire. Square: city.</p>}
+      {view.phase !== "ended" && <p className="e2-legend">Outlined: you can expand there. Square: stronghold.</p>}
 
-      {offers && <section className="e2-panel" aria-label="Capital">
-        <div className="aside-title">Capital</div>
+      {offers && <section className="e2-panel" aria-label="Home country">
+        <div className="aside-title">Home country</div>
         <div className="e2-buttons">{offers.map((offer) => <button type="button" className="primary" key={offer} disabled={busy} onClick={() => void run({ type: "pickCapital", code: offer })}>{countryName(offer)}</button>)}</div>
       </section>}
       {footholds && <form className="e2-panel" onSubmit={submitFoothold}>
         <input className="field turn-input active" style={{ "--pc": color } as React.CSSProperties} placeholder="Country name" aria-label="Country name" value={foothold} onChange={(event) => setFoothold(event.target.value)} readOnly={busy}/>
-        <div className="e2-buttons"><button className="primary" disabled={busy || !foothold.trim() || (footholdResolved !== null && !footholdOk)}>Place foothold</button></div>
+        <div className="e2-buttons"><button className="primary" disabled={busy || !foothold.trim() || (footholdResolved !== null && !footholdOk)}>Place outpost</button></div>
         {footholdResolved !== null && !footholdOk && <p className="e2-hint">{NOT_NOW}</p>}
       </form>}
       {boomRegions && <section className="e2-panel" aria-label="Boom region">
@@ -158,12 +158,12 @@ export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onA
       </section>}
       {act && <div className="e2-panel">
         <input className="field turn-input active" style={{ "--pc": color } as React.CSSProperties} placeholder="Country name" aria-label="Country name" value={country} onChange={(event) => setCountry(event.target.value)} readOnly={busy}/>
-        {code && owner && <input className="field" placeholder="Capital of that country" aria-label="Capital" value={capital} onChange={(event) => setCapital(event.target.value)} readOnly={busy}/>}
+        {code && owner && <input className="field" placeholder="Type its capital city (real-world)" aria-label="Capital city (real-world)" value={capital} onChange={(event) => setCapital(event.target.value)} readOnly={busy}/>}
         <div className="e2-buttons">
           <button type="button" className="primary" disabled={busy || !expandOk} onClick={() => actOnCountry((picked) => ({ type: "expand", code: picked }))}>{expandLabel}</button>
-          <button type="button" className="primary" disabled={busy || !colonizeOk} onClick={() => actOnCountry((picked) => ({ type: "colonize", code: picked }))}>{`Colonize (${act.costs.colonize})${act.costs.relief ? " (stuck)" : ""}`}</button>
-          <button type="button" className="primary" disabled={busy || !cityOk || !capital.trim()} onClick={() => actOnCountry((picked) => ({ type: "city", code: picked, capital: capital.trim() }))}>{`City (${act.costs.city})`}</button>
-          <button type="button" className="primary" disabled={busy || !annexOk || !capital.trim()} onClick={() => actOnCountry((picked) => ({ type: "annex", code: picked, capital: capital.trim() }))}>{act.costs.annex === null ? "Annex" : `Annex (${act.costs.annex})`}</button>
+          <button type="button" className="primary" disabled={busy || !colonizeOk} onClick={() => actOnCountry((picked) => ({ type: "colonize", code: picked }))}>{`Settle (${act.costs.colonize})${act.costs.relief ? " (no room to expand)" : ""}`}</button>
+          <button type="button" className="primary" disabled={busy || !cityOk || !capital.trim()} onClick={() => actOnCountry((picked) => ({ type: "city", code: picked, capital: capital.trim() }))}>{`Stronghold (${act.costs.city})`}</button>
+          <button type="button" className="primary" disabled={busy || !annexOk || !capital.trim()} onClick={() => actOnCountry((picked) => ({ type: "annex", code: picked, capital: capital.trim() }))}>{act.costs.annex === null ? "Take over" : `Take over (${act.costs.annex})`}</button>
           <button type="button" className="quiet" disabled={busy} onClick={() => void run({ type: "endTurn" })}>End turn</button>
         </div>
         {hint && <p className="e2-hint">{hint}</p>}

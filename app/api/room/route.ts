@@ -50,8 +50,8 @@ export async function POST(request: NextRequest) {
       // The speed only applies to turn-based and Empire rooms, each with its own options; live rooms and other games ignore it.
       if (mode === "turns" && body.turnSeconds !== undefined && !isTurnSeconds(body.turnSeconds)) return error("Choose a turn speed of 10, 15 or 25 seconds.");
       if (mode === "empire" && body.turnSeconds !== undefined && !isEmpireTurnSeconds(body.turnSeconds)) return error("Choose an Empire turn speed of 15, 20 or 30 seconds.");
-      if (mode === "empire2" && body.turnSeconds !== undefined && !isEmpire2TurnSeconds(body.turnSeconds)) return error("Choose an Empire 2.0 turn speed of 20, 30 or 45 seconds.");
-      if (mode === "empire2" && body.underdogBoomPick !== undefined && typeof body.underdogBoomPick !== "boolean") return error("Choose whether the underdog picks a boom.");
+      if (mode === "empire2" && body.turnSeconds !== undefined && !isEmpire2TurnSeconds(body.turnSeconds)) return error("Choose a turn time of 20, 30 or 45 seconds, or no time limit.");
+      if (mode === "empire2" && body.underdogBoomPick !== undefined && typeof body.underdogBoomPick !== "boolean") return error("Choose whether the lowest player picks the boom region.");
       const turnSeconds = mode === "turns" ? (body.turnSeconds ?? DEFAULT_TURN_SECONDS) as number
         : mode === "empire" ? (body.turnSeconds ?? DEFAULT_EMPIRE_TURN_SECONDS) as number
         : mode === "empire2" ? (body.turnSeconds ?? DEFAULT_EMPIRE2_TURN_SECONDS) as number : undefined;

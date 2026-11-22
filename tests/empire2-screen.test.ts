@@ -133,20 +133,20 @@ afterEach(() => {
 test("the capital phase shows three offers as buttons to the picker only", () => {
   const picker = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(capitalView("a"), "a")));
   for (const code of ["FR", "PE", "JP"]) assert.match(picker, new RegExp(`<button[^>]*>${countryName(code)}</button>`));
-  assert.match(text(picker), /Pick your capital/);
+  assert.match(text(picker), /Pick your home country/);
   const other = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(capitalView("b"), "b")));
   assert.doesNotMatch(other, /<button[^>]*>France<\/button>/);
-  assert.match(text(other), /Ana is picking a capital/);
+  assert.match(text(other), /Ana is picking a home country/);
 });
 
 test("the foothold phase shows an input to the picker and a waiting banner to others", () => {
   const picker = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(footholdView("a"), "a")));
   assert.match(picker, /<input[^>]*placeholder="Country name"/);
-  assert.match(text(picker), /Place your second foothold/);
-  assert.match(text(picker), /Place foothold/);
+  assert.match(text(picker), /Place your outpost/);
+  assert.match(text(picker), /Place outpost/);
   const other = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(footholdView("b"), "b")));
   assert.doesNotMatch(other, /<input/);
-  assert.match(text(other), /Ana is placing a second foothold/);
+  assert.match(text(other), /Ana is placing an outpost/);
 });
 
 test("the boom pick prompt shows only to the picker", () => {
@@ -154,25 +154,25 @@ test("the boom pick prompt shows only to the picker", () => {
   assert.match(text(picker), /Pick this round's boom region/);
   for (const region of ["Amazon", "Sahel", "Steppe"]) assert.match(picker, new RegExp(`<button[^>]*>${region}</button>`));
   const other = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(boomView("b"), "b")));
-  assert.match(text(other), /Ana is picking a boom/);
+  assert.match(text(other), /Ana is picking the boom region/);
   assert.doesNotMatch(other, /<button[^>]*>Amazon<\/button>/);
 });
 
 test("the action panel shows costs and disables actions that are not in the view's legal lists", () => {
   const html = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view(), "a")));
   assert.match(html, /<button[^>]*disabled[^>]*>Expand \(free\)<\/button>/, "nothing typed yet, so Expand is disabled");
-  assert.match(html, /<button[^>]*>Colonize \(6\)<\/button>/);
-  assert.match(html, /<button[^>]*>City \(3\)<\/button>/);
-  assert.match(html, /<button[^>]*>Annex \(5\)<\/button>/);
+  assert.match(html, /<button[^>]*>Settle \(6\)<\/button>/);
+  assert.match(html, /<button[^>]*>Stronghold \(3\)<\/button>/);
+  assert.match(html, /<button[^>]*>Take over \(5\)<\/button>/);
   assert.match(html, /<button[^>]*>End turn<\/button>/);
 
   const sent: Empire2Action[] = [];
   const doc = mountComponent(React.createElement(Empire2Game, gameProps(view(), "a", sent)));
   setField(doc, 'input[aria-label="Country name"]', "Japan");
   assert.equal(buttonNamed(doc, "Expand (free)")!.disabled, true, "Japan is not in legal.expand");
-  assert.equal(buttonNamed(doc, "Colonize (6)")!.disabled, false, "Japan is in legal.colonize");
+  assert.equal(buttonNamed(doc, "Settle (6)")!.disabled, false, "Japan is in legal.colonize");
   setField(doc, 'input[aria-label="Country name"]', "Mexico");
-  assert.equal(buttonNamed(doc, "Colonize (6)")!.disabled, true);
+  assert.equal(buttonNamed(doc, "Settle (6)")!.disabled, true);
   assert.match(doc.body.textContent ?? "", /You can't do that right now\./);
   setField(doc, 'input[aria-label="Country name"]', "Italy");
   assert.equal(buttonNamed(doc, "Expand (free)")!.disabled, false);
@@ -202,9 +202,9 @@ test("a non-current player sees a waiting line and no action buttons", () => {
   assert.doesNotMatch(html, /<button[^>]*>Expand/);
 });
 
-test("the stuck relief shows the (stuck) suffix on Colonize", () => {
+test("the no-room relief shows the (no room to expand) suffix on Settle", () => {
   const html = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view({ costs: { expand: 0, colonize: 2, city: 3, annex: 5, relief: true } }), "a")));
-  assert.match(text(html), /Colonize \(2\) \(stuck\)/);
+  assert.match(text(html), /Settle \(2\) \(no room to expand\)/);
 });
 
 test("the scoreboard shows influence and points, with the breakdown in details", () => {
@@ -218,7 +218,7 @@ test("the scoreboard shows influence and points, with the breakdown in details",
   assert.match(plain, /2 points/);
   assert.match(html, /<details[^>]*><summary>Details<\/summary><div class="e2-breakdown"><span>Countries /);
   assert.match(plain, /Largest empire · 4 points/);
-  assert.match(plain, /Europe set · 2 points/);
+  assert.match(plain, /Full Europe · 2 points/);
 });
 
 test("How to play is collapsed and states the numbers from the rules", () => {
@@ -229,7 +229,7 @@ test("How to play is collapsed and states the numbers from the rules", () => {
   assert.match(text(html), /Everyone starts with 3 influence/);
   assert.doesNotMatch(text(html), /Boom pick:/, "the boom pick line only shows when the option is on");
   const withBoom = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view({ underdogBoomPick: true }), "a")));
-  assert.match(text(withBoom), /Boom pick: the player with the fewest points picks this round's boom region\./);
+  assert.match(text(withBoom), /Boom region pick: the player with the fewest points picks this round's boom region\./);
 });
 
 test("the Expand button sends an expand action with the resolved code", () => {
@@ -241,16 +241,16 @@ test("the Expand button sends an expand action with the resolved code", () => {
   assert.deepEqual(sent, [{ type: "expand", code: "PE" }]);
 });
 
-test("City and Annex send the capital text with the action", () => {
+test("Stronghold and Take over send the capital city text with the action", () => {
   const sent: Empire2Action[] = [];
   const doc = mountComponent(React.createElement(Empire2Game, gameProps(view(), "a", sent)));
   setField(doc, 'input[aria-label="Country name"]', "France");
-  assert.equal(buttonNamed(doc, "City (3)")!.disabled, true, "City needs the capital text");
-  setField(doc, 'input[aria-label="Capital"]', " Paris ");
-  click(doc, "City (3)");
+  assert.equal(buttonNamed(doc, "Stronghold (3)")!.disabled, true, "Stronghold needs the capital city text");
+  setField(doc, 'input[aria-label="Capital city (real-world)"]', " Paris ");
+  click(doc, "Stronghold (3)");
   setField(doc, 'input[aria-label="Country name"]', "Germany");
-  setField(doc, 'input[aria-label="Capital"]', "Berlin");
-  click(doc, "Annex (5)");
+  setField(doc, 'input[aria-label="Capital city (real-world)"]', "Berlin");
+  click(doc, "Take over (5)");
   assert.deepEqual(sent, [
     { type: "city", code: "FR", capital: "Paris" },
     { type: "annex", code: "DE", capital: "Berlin" }
@@ -322,7 +322,7 @@ test("the lobby offers Empire 2.0 (playtest) with turn speeds and the boom optio
   assert.ok(buttonNamed(doc, "On"), "boom On");
   assert.equal(buttonNamed(doc, "Off")!.getAttribute("aria-pressed"), "true");
   assert.match(doc.body.textContent ?? "", /The player with the fewest points picks one of this round's boom regions\./);
-  assert.match(doc.body.textContent ?? "", /Expand, build cities and annex rivals\. First to 16 points wins\./);
+  assert.match(doc.body.textContent ?? "", /Expand, settle anywhere, build strongholds and take over rivals' countries\. First to 16 points wins\./);
 });
 
 test("the empire2 create request carries the chosen speed and boom option", async () => {
@@ -345,7 +345,7 @@ test("the empire2 create request carries the chosen speed and boom option", asyn
   const { code, ...rest } = bodies[0];
   assert.equal(code, "");
   assert.deepEqual(rest, { action: "create", name: "Ana", gameId: "countries", mode: "empire2", turnSeconds: 45, underdogBoomPick: true });
-  assert.match(doc.body.textContent ?? "", /Empire 2\.0 \(playtest\) · 45s turns · Underdog picks a boom/);
+  assert.match(doc.body.textContent ?? "", /Empire 2\.0 \(playtest\) · 45s turns · Lowest player picks the boom region/);
 });
 
 test("a joiner sees the boom option in the lobby tag", async () => {
@@ -356,7 +356,7 @@ test("a joiner sees the boom option in the lobby tag", async () => {
   globalThis.fetch = (async () => new Response(JSON.stringify(room), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
   const doc = mountHome({ code: "ABC234", token: TOKEN, playerId: "b", name: "Ben" });
   await flush();
-  assert.match(doc.body.textContent ?? "", /Underdog picks a boom/);
+  assert.match(doc.body.textContent ?? "", /Lowest player picks the boom region/);
 });
 
 test("the 4-player roster shows four seats in an empire2 lobby", async () => {

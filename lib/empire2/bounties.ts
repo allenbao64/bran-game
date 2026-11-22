@@ -39,9 +39,9 @@ export function bountyLabel(card: BountyCard): string {
     case "long":
       return `${card.value} letters or more`;
     case "continent":
-      return `In ${card.value}`;
+      return `On the continent: ${card.value}`;
     case "region":
-      return `In ${card.value}`;
+      return `In region: ${card.value}`;
   }
 }
 

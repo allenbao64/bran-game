@@ -246,12 +246,12 @@ export function renderLogLine(
   const country = entry.code ? countryName(entry.code) : "";
   const cost = Math.abs(entry.amount ?? 0);
   switch (entry.type) {
-    case "capital": return `${who} picked ${country} as capital.`;
-    case "foothold": return `${who} placed a second foothold in ${country}.`;
+    case "capital": return `${who} picked ${country} as home country.`;
+    case "foothold": return `${who} placed an outpost in ${country}.`;
     case "expand": return `${who} expanded into ${country}` + ((entry.amount ?? 0) < 0 ? ` (-${cost})` : " (free)") + ".";
-    case "colonize": return `${who} colonized ${country} (-${cost}).`;
-    case "city": return `${who} built a city in ${country} (-${cost}).`;
-    case "annex": return `${who} annexed ${country} from ${nameOf(entry.from)} (-${cost}).`;
+    case "colonize": return `${who} settled ${country} (-${cost}).`;
+    case "city": return `${who} built a stronghold in ${country} (-${cost}).`;
+    case "annex": return `${who} took over ${country} from ${nameOf(entry.from)} (-${cost}).`;
     case "bounty": return `${who} claimed a bounty in ${country} (+${entry.amount ?? 0}).`;
     case "endTurn": return `${who} ended their turn.`;
     case "timeout": return `Time ran out. ${who}'s turn ended.`;
