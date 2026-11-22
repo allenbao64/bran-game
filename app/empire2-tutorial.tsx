@@ -33,7 +33,6 @@ function actionFor(step: TutorialStep, code: string, capital: string): Action | 
     case "settle": return { type: "colonize", code };
     case "stronghold": return { type: "city", code, capital };
     case "takeOver": return { type: "annex", code, capital };
-    case "endTurn": return { type: "endTurn" };
     default: return null;
   }
 }
@@ -47,6 +46,14 @@ export function Empire2Tutorial({ onClose }: { onClose: () => void }) {
   const [showing, setShowing] = useState(false);
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => { panel.current?.focus(); }, []);
+  // Escape skips the tutorial, like the Skip button.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") finish(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const top = stack[stack.length - 1];
   const { state, step } = top;
@@ -74,7 +81,12 @@ export function Empire2Tutorial({ onClose }: { onClose: () => void }) {
     if (!current || current.kind === "intro" || done || showing) return;
     setName(nameOf(code));
     const action = actionFor(current, code, capital.trim());
-    if (action) attempt(action);
+    if (action) attempt(action); else miss();
+  }
+  /** A click on the sea or on no country: say what to do, never a silent dead end. */
+  function miss() {
+    if (!current || current.kind === "intro" || done || showing) return;
+    setHint(current.kind === "endTurn" ? "Press End turn below." : "Tap a country on the map, or type its name below.");
   }
   function submitName() {
     if (!current || !name.trim()) return;
@@ -117,7 +129,7 @@ export function Empire2Tutorial({ onClose }: { onClose: () => void }) {
   const canSubmit = typed && name.trim() !== "" && (!needsCapital || capital.trim() !== "") && !showing;
 
   return <div className="e2-tut-backdrop">
-    <section className="e2-tut" role="dialog" aria-modal="true" aria-labelledby="e2-tut-title">
+    <section className="e2-tut" role="dialog" aria-modal="true" aria-labelledby="e2-tut-title" tabIndex={-1} ref={panel}>
       <div className="e2-tut-top">
         <span className="e2-tut-count">{done ? "Done" : `Step ${step + 1} of ${TUTORIAL_STEPS.length}`}</span>
         <button type="button" className="quiet" onClick={finish}>Skip</button>
@@ -126,7 +138,7 @@ export function Empire2Tutorial({ onClose }: { onClose: () => void }) {
         <WorldMap claims={state.owners} players={PLAYERS} youId={ME} heading="PRACTICE MAP" compact
           highlight={showing && current?.target ? [...lit, current.target] : lit}
           targets={current?.target ? [current.target] : undefined}
-          onCountryPick={done ? undefined : pick}/>
+          onCountryPick={done ? undefined : pick} onMiss={done ? undefined : miss}/>
       </div>
 
       {done ? <>
@@ -142,7 +154,8 @@ export function Empire2Tutorial({ onClose }: { onClose: () => void }) {
         {targetName && <p className="e2-tut-target">{`Next: ${targetName}`}</p>}
         {typed && <div className="e2-tut-inputs">
           <input className="field" placeholder="Country name" aria-label="Country name" value={name} disabled={showing}
-            onChange={(event) => setName(event.target.value)}/>
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter" && canSubmit) submitName(); }}/>
           {needsCapital && <input className="field" placeholder="Type its capital city (real-world)" aria-label="Capital city (real-world)" value={capital} disabled={showing}
             onChange={(event) => setCapital(event.target.value)}/>}
         </div>}

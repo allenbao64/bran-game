@@ -359,7 +359,7 @@ export default function Home() {
           {TURN_ROUND_OPTIONS.map((rounds) => <button type="button" className={`speed-option${selectedRounds === rounds ? " selected" : ""}`} key={rounds} aria-pressed={selectedRounds === rounds} onClick={() => setSelectedRounds(rounds)}><b>{rounds}</b><small>ROUNDS</small></button>)}
         </div></div>}</div>}
         {selectedGame === "countries" && selectedMode === "empire2" && <div className="e2-tut-entry">
-          {tutorialPrompt && <p className="e2-prompt" role="note">New to Empire? Try the 1-minute tutorial. <button type="button" className="primary" onClick={() => { markTutorialSeen(); setTutorialPrompt(false); setTutorialOpen(true); }}>Start</button> <button type="button" className="quiet" onClick={() => { markTutorialSeen(); setTutorialPrompt(false); }}>Not now</button></p>}
+          {tutorialPrompt && <p className="e2-prompt" role="note">New to Empire 2.0? Try the tutorial. <button type="button" className="primary" onClick={() => { markTutorialSeen(); setTutorialPrompt(false); setTutorialOpen(true); }}>Start</button> <button type="button" className="quiet" onClick={() => { markTutorialSeen(); setTutorialPrompt(false); }}>Not now</button></p>}
           <button type="button" className="quiet" onClick={() => setTutorialOpen(true)}>Tutorial</button>
         </div>}
         <label htmlFor="name">DISPLAY NAME</label><input id="name" className="field" maxLength={18} placeholder="Your name" value={name} onChange={(event) => setName(event.target.value)}/>

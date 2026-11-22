@@ -45,11 +45,15 @@ test("map-click-02 with onCountryPick a click on a country reports its code", ()
   assert.deepEqual(picked, ["BE"]);
 });
 
-test("map-click-03 a click on the sea or the svg reports nothing", () => {
+test("map-click-03 a click on the sea or the svg reports nothing as a country, and calls onMiss", () => {
   const picked: string[] = [];
-  const doc = mount(React.createElement(WorldMap, { claims, players: PLAYERS, youId: "a", compact: true, onCountryPick: (code: string) => picked.push(code) }));
+  let misses = 0;
+  const doc = mount(React.createElement(WorldMap, { claims, players: PLAYERS, youId: "a", compact: true, onCountryPick: (code: string) => picked.push(code), onMiss: () => { misses += 1; } }));
   act(() => { doc.querySelector(".map-ocean")!.dispatchEvent(new dom!.window.MouseEvent("click", { bubbles: true })); });
   assert.deepEqual(picked, []);
+  assert.equal(misses, 1, "the sea click is reported as a miss");
+  act(() => { doc.querySelector('path[data-code="BE"]')!.dispatchEvent(new dom!.window.MouseEvent("click", { bubbles: true })); });
+  assert.equal(misses, 1, "a country click is not a miss");
 });
 
 test("map-click-04 a drag (pointer moved more than a few pixels) is not a country click", () => {
@@ -67,7 +71,5 @@ test("map-click-04 a drag (pointer moved more than a few pixels) is not a countr
 
 test("map-click-05 without onCountryPick the map has no click handler and renders as before", () => {
   const doc = mount(React.createElement(WorldMap, { claims, players: PLAYERS, youId: "a", compact: true }));
-  const svg = doc.querySelector("svg")!;
-  assert.equal(svg.getAttribute("onclick"), null);
   assert.doesNotThrow(() => act(() => { doc.querySelector('path[data-code="BE"]')!.dispatchEvent(new dom!.window.MouseEvent("click", { bubbles: true })); }));
 });

@@ -7,10 +7,10 @@ import { playerColor } from "@/lib/player-colors";
 
 type MapPlayer = { id: string; name: string };
 /** `targets` are country codes to mark with a dashed outline (what the viewer can steal). `highlight` outlines a set of countries, e.g. a region the viewer is looking at. `homes` maps a player id to their starting country, drawn as a house marker. `emphasis` maps a player id to the country codes to outline thickly in that player's colour (their largest territory). */
-type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[]; highlight?: string[]; homes?: Record<string, string>; onCountryPick?: (code: string) => void; cities?: string[] };
+type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[]; highlight?: string[]; homes?: Record<string, string>; onCountryPick?: (code: string) => void; onMiss?: () => void; cities?: string[] };
 
 /** A shared board: every claimed country is filled with its owner's colour. `cities` marks each listed country with a small square (countries without a map point are skipped). */
-export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets, highlight, homes, onCountryPick, cities }: WorldMapProps) {
+export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets, highlight, homes, onCountryPick, onMiss, cities }: WorldMapProps) {
   const marked = useMemo(() => (targets ? new Set(targets) : undefined), [targets]);
   const lit = useMemo(() => new Set(highlight ?? []), [highlight]);
   const ids = useMemo(() => players.map((player) => player.id), [players]);
@@ -68,8 +68,9 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
 
   // Where the pointer went down, so a drag (pan) is not read as a click on a country.
   const pressAt = useRef<{ x: number; y: number } | null>(null);
+  const picking = Boolean(onCountryPick || onMiss);
   const onCountryClick = (event: React.MouseEvent<SVGSVGElement>) => {
-    if (!onCountryPick) return;
+    if (!picking) return;
     const start = pressAt.current;
     if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5) return;
     // With pointer capture the click can be dispatched to the svg itself, so also hit-test the release point.
@@ -77,7 +78,7 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
     const direct = target.closest?.("[data-code]");
     const under = !direct && typeof document.elementFromPoint === "function" ? document.elementFromPoint(event.clientX, event.clientY) : null;
     const code = (direct ?? under?.closest("[data-code]"))?.getAttribute("data-code");
-    if (code) onCountryPick(code);
+    if (code) onCountryPick?.(code); else onMiss?.();
   };
   const onPress = (event: React.PointerEvent<SVGSVGElement>) => { pressAt.current = { x: event.clientX, y: event.clientY }; };
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -129,8 +130,8 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
     <div className="map-stage">
     <svg ref={svgRef} viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} role="img" aria-label={`${total} countries have been claimed`}
       className={zoomable ? `map-zoomable${zoomed ? " zoomed" : ""}` : undefined}
-      onClick={onCountryPick ? onCountryClick : undefined}
-      onPointerDown={zoomable ? onPointerDown : onCountryPick ? onPress : undefined} onPointerMove={zoomable ? onPointerMove : undefined} onPointerUp={zoomable ? onPointerEnd : undefined} onPointerCancel={zoomable ? onPointerEnd : undefined}>
+      onClick={picking ? onCountryClick : undefined}
+      onPointerDown={zoomable ? onPointerDown : picking ? onPress : undefined} onPointerMove={zoomable ? onPointerMove : undefined} onPointerUp={zoomable ? onPointerEnd : undefined} onPointerCancel={zoomable ? onPointerEnd : undefined}>
       <rect width="900" height="450" rx="8" className="map-ocean" />
       <defs><pattern id="not-in-game" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ecebe3"/><line x1="0" y1="0" x2="0" y2="6" stroke="#bfc4b8" strokeWidth="2"/></pattern></defs>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>

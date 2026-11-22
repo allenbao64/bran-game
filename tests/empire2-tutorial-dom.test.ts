@@ -119,6 +119,35 @@ test("tutorial-dom-03 step two: clicking Belgium advances; Japan and Italy show 
   assert.equal(heading(doc), "Second expand", "the outlined country advances the step");
 });
 
+test("tutorial-dom-15 a click on the sea or on the End step map gives a hint, never a silent dead end", () => {
+  const doc = mountTutorial(() => {}, true);
+  click(doc, "Next");
+  act(() => { doc.querySelector(".map-ocean")!.dispatchEvent(new dom!.window.MouseEvent("click", { bubbles: true })); });
+  assert.equal(heading(doc), "Expand", "a sea click keeps the step open");
+  assert.equal(hint(doc), "Tap a country on the map, or type its name below.");
+  click(doc, "Show me");
+  setField(doc, 'input[aria-label="Country name"]', "Luxembourg");
+  click(doc, "Expand (", true);
+  assert.equal(heading(doc), "Settle");
+  click(doc, "Show me");
+  assert.equal(heading(doc), "Stronghold");
+  click(doc, "Show me");
+  assert.equal(heading(doc), "Take over");
+  click(doc, "Show me");
+  assert.equal(heading(doc), "End your turn");
+  clickCountry(doc, "FR");
+  assert.equal(hint(doc), "Press End turn below.", "a country click on the End step explains the step");
+  assert.equal(heading(doc), "End your turn");
+});
+
+test("tutorial-dom-16 Escape skips the tutorial and remembers it", () => {
+  let closed = 0;
+  const doc = mountTutorial(() => { closed += 1; });
+  act(() => { dom!.window.dispatchEvent(new dom!.window.KeyboardEvent("keydown", { key: "Escape" })); });
+  assert.equal(closed, 1, "Escape closes once");
+  assert.equal(dom!.window.localStorage.getItem(TUTORIAL_SEEN_KEY), "1");
+});
+
 test("tutorial-dom-04 step five: a wrong capital shows a hint; the right capital enables Stronghold", () => {
   const doc = mountTutorial(() => {}, true);
   click(doc, "Next");
@@ -264,11 +293,11 @@ test("tutorial-dom-11 the game screen and How to play use no bare city word", ()
 
 test("tutorial-dom-12 the first-time prompt shows once for Empire 2.0 and Not now remembers it", () => {
   const doc = mountHome();
-  assert.equal(doc.body.textContent?.includes("New to Empire? Try the 1-minute tutorial."), false, "not before the mode is chosen");
+  assert.equal(doc.body.textContent?.includes("New to Empire 2.0? Try the tutorial."), false, "not before the mode is chosen");
   click(doc, "Empire 2.0 (playtest)", true);
-  assert.equal(doc.body.textContent?.includes("New to Empire? Try the 1-minute tutorial."), true, "shown on first selection");
+  assert.equal(doc.body.textContent?.includes("New to Empire 2.0? Try the tutorial."), true, "shown on first selection");
   click(doc, "Not now");
-  assert.equal(doc.body.textContent?.includes("New to Empire? Try the 1-minute tutorial."), false, "dismissed");
+  assert.equal(doc.body.textContent?.includes("New to Empire 2.0? Try the tutorial."), false, "dismissed");
   assert.equal(dom!.window.localStorage.getItem(TUTORIAL_SEEN_KEY), "1");
 });
 
@@ -277,7 +306,7 @@ test("tutorial-dom-13 the first-time prompt still works when storage throws (it 
   // Storage is blocked from here on: every read and write throws.
   Object.defineProperty(dom!.window, "localStorage", { configurable: true, get() { throw new Error("blocked"); } });
   click(doc, "Empire 2.0 (playtest)", true);
-  assert.equal(doc.body.textContent?.includes("New to Empire? Try the 1-minute tutorial."), true);
+  assert.equal(doc.body.textContent?.includes("New to Empire 2.0? Try the tutorial."), true);
   click(doc, "Not now");
   assert.ok(buttonNamed(doc, "Tutorial"), "the lobby still works");
 });
