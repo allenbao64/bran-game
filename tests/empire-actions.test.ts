@@ -431,7 +431,7 @@ test("a correct steal under free steals keeps the token", () => {
 test("fortify needs ownership, rejects capitals and repeats, and respects the fort limit", () => {
   const { deps } = fakeDeps();
   fails(actions.applyAction(game(SPLIT), "p1", { type: "fortify", code: "E" }, 2000, deps), 409, "You can only fortify a country you own.");
-  fails(actions.applyAction(game(SPLIT), "p1", { type: "fortify", code: "A" }, 2000, deps), 409, "Capitals can't be fortified.");
+  fails(actions.applyAction(game(SPLIT), "p1", { type: "fortify", code: "A" }, 2000, deps), 409, "Home countries can't be fortified.");
   fails(
     actions.applyAction(game(SPLIT, { forts: [["B"], []] }), "p1", { type: "fortify", code: "B" }, 2000, deps),
     409,

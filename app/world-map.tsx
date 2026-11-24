@@ -7,10 +7,10 @@ import { playerColor } from "@/lib/player-colors";
 
 type MapPlayer = { id: string; name: string };
 /** `targets` are country codes to mark with a dashed outline (what the viewer can steal). `highlight` outlines a set of countries, e.g. a region the viewer is looking at. `homes` maps a player id to their starting country, drawn as a house marker. `emphasis` maps a player id to the country codes to outline thickly in that player's colour (their largest territory). */
-type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[]; highlight?: string[]; homes?: Record<string, string>; onCountryPick?: (code: string) => void; onMiss?: () => void; cities?: string[] };
+type WorldMapProps = { claims: Record<string, string>; players: MapPlayer[]; youId: string; heading?: string; emphasis?: Record<string, string[]>; compact?: boolean; targets?: string[]; highlight?: string[]; homes?: Record<string, string>; onCountryPick?: (code: string) => void; onMiss?: () => void; cities?: string[]; initialView?: MapView };
 
-/** A shared board: every claimed country is filled with its owner's colour. `cities` marks each listed country with a small square (countries without a map point are skipped). */
-export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets, highlight, homes, onCountryPick, onMiss, cities }: WorldMapProps) {
+/** A shared board: every claimed country is filled with its owner's colour. `cities` marks each listed country with a small square (countries without a map point are skipped). `initialView` frames the map when it first shows (and on Reset); without it the whole world shows. */
+export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", emphasis, compact = false, targets, highlight, homes, onCountryPick, onMiss, cities, initialView }: WorldMapProps) {
   const marked = useMemo(() => (targets ? new Set(targets) : undefined), [targets]);
   const lit = useMemo(() => new Set(highlight ?? []), [highlight]);
   const ids = useMemo(() => players.map((player) => player.id), [players]);
@@ -33,7 +33,8 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
   }, [emphasised, marked, lit]);
 
   const zoomable = !compact;
-  const [view, setView] = useState<MapView>(IDENTITY_VIEW);
+  const startView = initialView ?? IDENTITY_VIEW;
+  const [view, setView] = useState<MapView>(startView);
   const svgRef = useRef<SVGSVGElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const velocity = useRef({ x: 0, y: 0, at: 0 });
@@ -174,7 +175,7 @@ export function WorldMap({ claims, players, youId, heading = "LIVE WORLD MAP", e
     {zoomable && <div className="map-zoom-controls" role="group" aria-label="Map zoom">
       <button type="button" aria-label="Zoom in" disabled={view.k >= MAX_ZOOM} onClick={() => zoomBy(ZOOM_STEP)}>+</button>
       <button type="button" aria-label="Zoom out" disabled={view.k <= MIN_ZOOM} onClick={() => zoomBy(1 / ZOOM_STEP)}>−</button>
-      <button type="button" aria-label="Reset zoom" className="map-zoom-reset" disabled={!zoomed} onClick={() => update(IDENTITY_VIEW)}>Reset</button>
+      <button type="button" aria-label="Reset zoom" className="map-zoom-reset" disabled={view.k === startView.k && view.x === startView.x && view.y === startView.y} onClick={() => update(startView)}>Reset</button>
     </div>}
     </div>
   </section>;

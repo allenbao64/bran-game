@@ -46,7 +46,7 @@ function logLine(entry: EmpireView["log"][number], nameOf: (id?: string) => stri
   if (entry.kind === "claim") return `${who} claimed ${entry.name}${entry.points && entry.points > 1 ? ` (+${entry.points})` : ""}`;
   if (entry.kind === "steal") return `${who} stole ${entry.name} from ${nameOf(entry.from)}`;
   if (entry.kind === "fortify") return `${who} fortified ${entry.name}`;
-  return entry.code ? `${who} missed the capital of ${entry.name}` : `${who} passed`;
+  return entry.code ? `${who} missed the capital city of ${entry.name}` : `${who} passed`;
 }
 
 /** In-game screen for Empire: turn banner, cards, actions, scoreboard and the shared map. */
@@ -104,13 +104,13 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
       {!mine && <div className="empire-actions"><input className="field turn-input" style={{ "--pc": currentColor } as React.CSSProperties} placeholder={`Waiting for ${current?.name ?? "the other player"}…`} aria-label="Country name" disabled/></div>}
       {mine && <form className="empire-actions" onSubmit={submit}>
         <input ref={input} className="field turn-input active" style={{ "--pc": currentColor } as React.CSSProperties} placeholder="Country name" aria-label="Country name" value={country} onChange={(event) => setCountry(event.target.value)} readOnly={busy}/>
-        {owner && owner !== playerId && <input className="field" placeholder={`Capital of ${resolved?.name}`} aria-label="Capital" value={capital} onChange={(event) => setCapital(event.target.value)} disabled={busy}/>}
+        {owner && owner !== playerId && <input className="field" placeholder={`Capital city of ${resolved?.name} (real-world)`} aria-label="Capital city (real-world)" value={capital} onChange={(event) => setCapital(event.target.value)} disabled={busy}/>}
         <div className="empire-buttons">
           <button className="primary" disabled={busy || !country.trim() || !picked}>{owner && owner !== playerId ? "Steal" : "Claim"}</button>
           <button type="button" className="quiet" disabled={busy || !country.trim() || owner !== playerId} onClick={() => withCountry((code) => ({ type: "fortify", code }))}>Fortify</button>
           <button type="button" className="quiet" disabled={busy} onClick={() => void run({ type: "pass" })}>Pass</button>
         </div>
-        {!picked ? <p className="empire-hint">Pick a card first.</p> : owner && owner !== playerId ? <p className="empire-hint">{`${resolved?.name} belongs to ${nameOf(owner)}. Name its capital to steal it (${me?.stealTokens ?? 0} steal${me?.stealTokens === 1 ? "" : "s"} left).`}</p> : null}
+        {!picked ? <p className="empire-hint">Pick a card first.</p> : owner && owner !== playerId ? <p className="empire-hint">{`${resolved?.name} belongs to ${nameOf(owner)}. Name its capital city to steal it (${me?.stealTokens ?? 0} steal${me?.stealTokens === 1 ? "" : "s"} left).`}</p> : null}
       </form>}
       {notice && <p className="notice">{notice}</p>}
       <WorldMap claims={countryClaims} players={players} youId={playerId} emphasis={view.largestGroups} targets={steal?.canSteal ? steal.targets : undefined}/>
@@ -122,7 +122,7 @@ export function EmpireGame({ view, players, playerId, countryClaims, skewMs, not
         const info = view.players.find((entry) => entry.id === player.id);
         return <div className="empire-score" key={player.id} style={{ borderColor: colorOf(player.id) }}>
           <div className="empire-score-head"><b style={{ color: colorOf(player.id) }}>{player.name}{player.id === playerId ? " (you)" : ""}</b><strong>{score?.total ?? 0}</strong></div>
-          <small>{score?.countries ?? 0} countries · capital {info?.capitalName} · {info?.stealTokens ?? 0} steals</small>
+          <small>{score?.countries ?? 0} countries · home {info?.capitalName} · {info?.stealTokens ?? 0} steals</small>
           {score && bonusLines(score).map((line) => <small key={line} className="empire-bonus">{line}</small>)}
           {info && info.fortNames.length > 0 && <small>Forts: {info.fortNames.join(", ")}</small>}
         </div>;

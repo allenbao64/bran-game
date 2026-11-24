@@ -22,6 +22,11 @@ const RANKS = ["1ST", "2ND", "3RD", "4TH"];
 const NO_COLOR = "#9aa29b";
 
 const countryName = (code: string) => countryByCode(code)?.name ?? code;
+/** One meaning for "boom region", used in the sidebar and How to play. */
+const boomGloss = (underdogBoomPick: boolean) => {
+  const rules = playtestRules(underdogBoomPick);
+  return `Owning land in a boom region pays ${rules.boomIncome} influence that round, or ${rules.boomCityIncome} with a stronghold there.`;
+};
 const roundText = (view: Empire2View) => `Round ${Math.min(view.round, view.roundCap)} of ${view.roundCap}`;
 
 /** Banner text for the phase. The acting player is the picker in setup, the boom picker, or the turn player. */
@@ -48,7 +53,7 @@ function Breakdown({ player }: { player: Empire2ViewPlayer }) {
     {vp.largestEmpire > 0 && <span>Largest empire · {vp.largestEmpire} points</span>}
     {income && <>
       <span>Last round's income {income.total}</span>
-      <span>Base {income.base}, land {income.territory}, strongholds {income.cities}, boom {income.boom}, behind the leader {income.underdog}</span>
+      <span>Base {income.base}, land {income.territory}, strongholds {income.cities}, boom regions {income.boom}, behind the leader {income.underdog}</span>
     </>}
   </div>;
 }
@@ -68,8 +73,8 @@ function HowToPlay({ underdogBoomPick, untimed, onOpenTutorial }: { underdogBoom
     <li>Points: {rules.cityPoints} per stronghold. A full region (you own every country in it) gives 2 to 4 points, by size. The largest empire (a connected group of at least {rules.largestEmpireMin} countries) gives {rules.largestEmpirePoints} points.</li>
     <li>Winning: the first player with {rules.winPoints} points at the end of their own turn wins. A back-to-back turn (you went last, then first) can't win on its own. After round {rules.roundCap} the most points wins, and ties go to more influence.</li>
     <li>Events: every {rules.eventEvery}th round a world event applies to the next round.</li>
-    <li>Boom regions: {rules.boomRegionCount} regions pay bonus income each round to owners of land there.</li>
-    {underdogBoomPick && <li>Boom region pick: the player with the fewest points picks this round's boom region.</li>}
+    <li>Boom regions: {rules.boomRegionCount} regions boom each round. Owning land in one pays {rules.boomIncome} influence that round ({rules.boomCityIncome} with a stronghold there).</li>
+    {underdogBoomPick && <li>Boom region pick: the player with the fewest points picks one boom region for this round. The rest are drawn at random.</li>}
     <li>{untimed ? "Time: no time limit. Take as long as you need. Only the host can end the game." : "Time: each turn has a clock. When it runs out your turn ends."}</li>
   </ul></details>;
 }
@@ -181,7 +186,7 @@ export function Empire2Game({ view, players, playerId, skewMs, notice, busy, onA
         <details><summary>Details</summary><Breakdown player={entry}/></details>
       </div>)}
       {view.event && <p className="e2-line">{`Event: ${view.event}`}</p>}
-      {view.booms.length > 0 && view.phase !== "boomPick" && <p className="e2-line">{`Booms: ${view.booms.join(", ")}`}</p>}
+      {view.booms.length > 0 && view.phase !== "boomPick" && <p className="e2-line">{`Boom regions: ${view.booms.join(", ")}`}<br/><small>{boomGloss(view.underdogBoomPick)}</small></p>}
       {view.bounties.length > 0 && <p className="e2-line">{`Bounties: ${view.bounties.map((card) => card.label).join(", ")}`}</p>}
       {view.log.length > 0 && <section className="e2-recent"><div className="aside-title">Recent</div>{view.log.map((line, index) => <p key={index}>{line}</p>)}</section>}
       <HowToPlay underdogBoomPick={view.underdogBoomPick} untimed={view.turnMs === null} onOpenTutorial={onOpenTutorial}/>

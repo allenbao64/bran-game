@@ -158,3 +158,5 @@
 .e2-tut-showing .region-highlight{animation:e2-tut-pulse .8s ease-in-out infinite}
 @keyframes e2-tut-pulse{50%{opacity:.35}}
 @media (prefers-reduced-motion: reduce){.e2-tut-showing .region-highlight{animation:none}}
+/* Practice map: the frame is zoomed, so strokes stay hairline-thin (the map has no zoom class to do this). */
+.e2-tut-map .map-country,.e2-tut-map .map-dot{vector-effect:non-scaling-stroke}

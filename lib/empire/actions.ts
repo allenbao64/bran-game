@@ -341,7 +341,7 @@ function steal(
 
 function fortify(state: EmpireState, playerId: string, code: string, now: number, deps: EmpireDeps): EmpireState | ActionError {
   if (state.owners[code] !== playerId) return fail(409, "You can only fortify a country you own.");
-  if (state.players.some((p) => p.capital === code)) return fail(409, "Capitals can't be fortified.");
+  if (state.players.some((p) => p.capital === code)) return fail(409, "Home countries can't be fortified.");
 
   const actor = state.players[state.seat];
   if (actor.forts.includes(code)) return fail(409, "That country is already fortified.");

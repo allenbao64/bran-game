@@ -355,7 +355,7 @@ export default function Home() {
         </div></div>}{selectedMode === "empire2" && <div role="group" aria-label="Choose whether the lowest player picks the boom region"><span className="mode-label">LOWEST PLAYER PICKS THE BOOM REGION</span><div className="speed-picker e2-two">
           <button type="button" className={`speed-option${!selectedEmpire2Boom ? " selected" : ""}`} aria-pressed={!selectedEmpire2Boom} onClick={() => setSelectedEmpire2Boom(false)}><b>Off</b></button>
           <button type="button" className={`speed-option${selectedEmpire2Boom ? " selected" : ""}`} aria-pressed={selectedEmpire2Boom} onClick={() => setSelectedEmpire2Boom(true)}><b>On</b></button>
-        </div><small className="e2-hint">The player with the fewest points picks one of this round&apos;s boom regions.</small></div>}{selectedMode === "turns" && <div role="group" aria-label="Choose the number of rounds"><span className="mode-label">ROUNDS</span><div className="speed-picker">
+        </div><small className="e2-hint">Boom regions pay bonus influence to owners of land there. The player with the fewest points picks one boom region for this round; the rest are drawn at random.</small></div>}{selectedMode === "turns" && <div role="group" aria-label="Choose the number of rounds"><span className="mode-label">ROUNDS</span><div className="speed-picker">
           {TURN_ROUND_OPTIONS.map((rounds) => <button type="button" className={`speed-option${selectedRounds === rounds ? " selected" : ""}`} key={rounds} aria-pressed={selectedRounds === rounds} onClick={() => setSelectedRounds(rounds)}><b>{rounds}</b><small>ROUNDS</small></button>)}
         </div></div>}</div>}
         {selectedGame === "countries" && selectedMode === "empire2" && <div className="e2-tut-entry">
@@ -375,7 +375,7 @@ export default function Home() {
     {stage === "game" && room && isTurns && turn && <TurnsGame turn={turn} scores={scores} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} entry={entry} onEntry={setEntry} notice={notice} busy={busy} onSubmit={submitGuess} onPass={() => void passTurn()} onEnd={() => void endRound()} colorOf={colorOf} largestGroups={largestGroups} claimNote={noteText} startCountries={startCountries} recentGuesses={recentGuesses}/>}
     {stage === "game" && room && isTurns && !turn && <p className="lede">Dealing the first card…</p>}
     {stage === "game" && room && isEmpire && empire && <EmpireGame view={empire} players={players} playerId={playerId} countryClaims={countryClaims} skewMs={skewMs} notice={notice} busy={busy} onAction={empireAction} onNotice={setNotice} onEnd={() => void endRound()} colorOf={colorOf}/>}
-    {stage === "game" && room && isEmpire && !empire && <p className="lede">Placing capitals…</p>}
+    {stage === "game" && room && isEmpire && !empire && <p className="lede">Placing home countries…</p>}
     {stage === "game" && room && isEmpire2 && empire2 && <Empire2Game view={empire2} players={players} playerId={playerId} skewMs={skewMs} notice={notice} busy={busy} onAction={empire2Action} onNotice={setNotice} onEnd={() => void endRound()} onOpenTutorial={() => setTutorialOpen(true)}/>}
     {stage === "game" && room && isEmpire2 && !empire2 && <p className="lede">Starting the game…</p>}
     {stage === "game" && room && !isTurns && !isEmpire && !isEmpire2 && <div className="game"><section><div className="game-head"><h1>{activeGame.title}</h1><div className={left < 30 ? "timer urgent" : "timer"}><small>TIME LEFT</small><b>{timeText(left)}</b></div></div>

@@ -221,6 +221,15 @@ test("the scoreboard shows influence and points, with the breakdown in details",
   assert.match(plain, /Full Europe · 2 points/);
 });
 
+test("boom-01 the sidebar names the boom regions and says what they pay, and How to play uses the same meaning", () => {
+  const html = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view({ booms: ["Amazon", "Sahel"] }), "a")));
+  assert.match(text(html), /Boom regions: Amazon, Sahel/);
+  assert.match(text(html), /Owning land in a boom region pays 1 influence that round, or 2 with a stronghold there\./);
+  assert.doesNotMatch(text(html), /Booms:/, "the bare Booms label is gone");
+  assert.match(text(html), /Boom regions: 3 regions boom each round\. Owning land in one pays 1 influence that round \(2 with a stronghold there\)\./);
+  assert.match(text(html), /boom regions 0, behind the leader 0/, "the scoreboard breakdown uses the same words");
+});
+
 test("How to play is collapsed and states the numbers from the rules", () => {
   const html = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view(), "a")));
   assert.match(html, /<details class="e2-how">/);
@@ -229,7 +238,7 @@ test("How to play is collapsed and states the numbers from the rules", () => {
   assert.match(text(html), /Everyone starts with 3 influence/);
   assert.doesNotMatch(text(html), /Boom pick:/, "the boom pick line only shows when the option is on");
   const withBoom = renderToStaticMarkup(React.createElement(Empire2Game, gameProps(view({ underdogBoomPick: true }), "a")));
-  assert.match(text(withBoom), /Boom region pick: the player with the fewest points picks this round's boom region\./);
+  assert.match(text(withBoom), /Boom region pick: the player with the fewest points picks one boom region for this round\. The rest are drawn at random\./);
 });
 
 test("the Expand button sends an expand action with the resolved code", () => {
@@ -321,7 +330,7 @@ test("the lobby offers Empire 2.0 (playtest) with turn speeds and the boom optio
   assert.equal(buttonNamed(doc, "Standard", true)!.getAttribute("aria-pressed"), "true");
   assert.ok(buttonNamed(doc, "On"), "boom On");
   assert.equal(buttonNamed(doc, "Off")!.getAttribute("aria-pressed"), "true");
-  assert.match(doc.body.textContent ?? "", /The player with the fewest points picks one of this round's boom regions\./);
+  assert.match(doc.body.textContent ?? "", /The player with the fewest points picks one boom region for this round; the rest are drawn at random\./);
   assert.match(doc.body.textContent ?? "", /Expand, settle anywhere, build strongholds and take over rivals' countries\. First to 16 points wins\./);
 });
 

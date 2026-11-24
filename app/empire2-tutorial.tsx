@@ -7,7 +7,7 @@ import { empire2Geo } from "@/lib/empire2/geo-adapter";
 import { frontier, ownedBy } from "@/lib/empire2/state";
 import type { Action, EmpireState } from "@/lib/empire2/types";
 import {
-  ME, RIVAL, TUTORIAL_CTX, TUTORIAL_STEPS, createTutorialState, markTutorialSeen, runScriptedStep, type TutorialStep,
+  FOCUS_EUROPE, ME, RIVAL, TUTORIAL_CTX, TUTORIAL_STEPS, createTutorialState, focusView, markTutorialSeen, runScriptedStep, type TutorialStep,
 } from "@/lib/empire2-tutorial";
 
 type Snapshot = { state: EmpireState; step: number };
@@ -86,7 +86,7 @@ export function Empire2Tutorial({ onClose }: { onClose: () => void }) {
   /** A click on the sea or on no country: say what to do, never a silent dead end. */
   function miss() {
     if (!current || current.kind === "intro" || done || showing) return;
-    setHint(current.kind === "endTurn" ? "Press End turn below." : "Tap a country on the map, or type its name below.");
+    setHint(current.kind === "endTurn" ? "Press End turn below." : current.note ?? "Tap a country on the map, or type its name below.");
   }
   function submitName() {
     if (!current || !name.trim()) return;
@@ -135,7 +135,9 @@ export function Empire2Tutorial({ onClose }: { onClose: () => void }) {
         <button type="button" className="quiet" onClick={finish}>Skip</button>
       </div>
       <div className={showing ? "e2-tut-map e2-tut-showing" : "e2-tut-map"}>
-        <WorldMap claims={state.owners} players={PLAYERS} youId={ME} heading="PRACTICE MAP" compact
+        {/* Keyed by step: each step opens framed on its own part of the map (Europe, or Brazil for settle). */}
+        <WorldMap key={step} claims={state.owners} players={PLAYERS} youId={ME} heading="PRACTICE MAP" compact
+          initialView={focusView(current?.focus ?? FOCUS_EUROPE)}
           highlight={showing && current?.target ? [...lit, current.target] : lit}
           targets={current?.target ? [current.target] : undefined}
           onCountryPick={done ? undefined : pick} onMiss={done ? undefined : miss}/>
@@ -152,6 +154,7 @@ export function Empire2Tutorial({ onClose }: { onClose: () => void }) {
         <h2 id="e2-tut-title">{current.heading}</h2>
         <p>{current.text}</p>
         {targetName && <p className="e2-tut-target">{`Next: ${targetName}`}</p>}
+        {current.note && <p className="e2-tut-target">{current.note}</p>}
         {typed && <div className="e2-tut-inputs">
           <input className="field" placeholder="Country name" aria-label="Country name" value={name} disabled={showing}
             onChange={(event) => setName(event.target.value)}

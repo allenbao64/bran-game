@@ -7,6 +7,8 @@ import { empire2Geo } from "@/lib/empire2/geo-adapter";
 import { countryByCode } from "@/lib/countries";
 import { playtestRules } from "@/lib/empire2-playtest";
 import type { Action, Ctx, EmpireState, EngineErrorCode } from "@/lib/empire2/types";
+import { centredView, type MapView } from "@/lib/map-zoom";
+import { MAP_HEIGHT, MAP_WIDTH } from "@/lib/world-geometry";
 
 export const TUTORIAL_SEEN_KEY = "bran-e2-tutorial-seen-v1";
 export const ME = "you";
@@ -25,11 +27,23 @@ const EXPAND_HINTS: Partial<Record<EngineErrorCode, string | ((code: string) => 
   notEnoughInfluence: NOT_ENOUGH,
 };
 
+/** A fixed map frame: the map point at the centre of the practice map, and its scale. */
+export type MapFocus = { cx: number; cy: number; k: number };
+/** Western and Central Europe at 9x: every tutorial country in Europe is on screen, and Belgium's path is about 26px across on a 343px map. */
+export const FOCUS_EUROPE: MapFocus = { cx: 468, cy: 79, k: 9 };
+/** South America, for the settle step, which may take any free country (Brazil is outside the Europe frame). */
+export const FOCUS_BRAZIL: MapFocus = { cx: 312, cy: 270, k: 3 };
+export const focusView = (focus: MapFocus): MapView => centredView(focus.cx, focus.cy, focus.k, MAP_WIDTH, MAP_HEIGHT);
+
 export type TutorialStep = {
   id: string;
   heading: string;                                      // at most four words
   text: string;                                         // at most two short sentences
   kind: "intro" | "expand" | "settle" | "stronghold" | "takeOver" | "endTurn";
+  /** The map frame shown for this step. */
+  focus: MapFocus;
+  /** Shown under the target, and as the tap hint, when the country is too small to tap in its frame. */
+  note?: string;
   /** The scripted move the "Show me" button plays through applyAction. null for the intro. */
   script: Action | null;
   /** Country the demo points at (outline and label). */
@@ -47,34 +61,34 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "empire", heading: "Your empire",
     text: `Every country you own is your empire. First to ${rules.winPoints} points wins.`,
-    kind: "intro", script: null, target: null, button: "", needsCapital: false, hints: {},
+    kind: "intro", focus: FOCUS_EUROPE, script: null, target: null, button: "", needsCapital: false, hints: {},
     done: () => true,
   },
   {
     id: "expand", heading: "Expand",
     text: "Expand into a free country that touches your empire. Your first expand each turn is free.",
-    kind: "expand", script: { type: "expand", code: "BE" }, target: "BE", button: "Expand (free)", needsCapital: false,
+    kind: "expand", focus: FOCUS_EUROPE, script: { type: "expand", code: "BE" }, target: "BE", button: "Expand (free)", needsCapital: false,
     hints: EXPAND_HINTS,
     done: (state) => (state.turn?.expands ?? 0) >= 1,
   },
   {
     id: "second", heading: "Second expand",
     text: `A second expand costs ${rules.expandCost} influence. You can make ${rules.maxExpandsPerTurn} expands a turn.`,
-    kind: "expand", script: { type: "expand", code: "LU" }, target: "LU", button: `Expand (${rules.expandCost})`, needsCapital: false,
+    kind: "expand", focus: FOCUS_EUROPE, note: "Luxembourg is very small. Tap it, or type its name below.", script: { type: "expand", code: "LU" }, target: "LU", button: `Expand (${rules.expandCost})`, needsCapital: false,
     hints: EXPAND_HINTS,
     done: (state) => (state.turn?.expands ?? 0) >= 2,
   },
   {
     id: "settle", heading: "Settle",
     text: `Settle any free country anywhere for ${rules.colonizeCost} influence. It doesn't need to touch you.`,
-    kind: "settle", script: { type: "colonize", code: "BR" }, target: "BR", button: `Settle (${rules.colonizeCost})`, needsCapital: false,
+    kind: "settle", focus: FOCUS_BRAZIL, script: { type: "colonize", code: "BR" }, target: "BR", button: `Settle (${rules.colonizeCost})`, needsCapital: false,
     hints: { countryTaken: "Settle takes a free country, one nobody owns.", notEnoughInfluence: NOT_ENOUGH },
     done: (state) => (state.turn?.colonizes ?? 0) >= 1,
   },
   {
     id: "stronghold", heading: "Stronghold",
     text: `Build a stronghold in a country you own for ${rules.cityCost} influence. It scores ${rules.cityPoints} point and pays ${rules.cityIncome} a round.`,
-    kind: "stronghold", script: { type: "city", code: "DE", capital: "Berlin" }, target: "DE", button: `Stronghold (${rules.cityCost})`, needsCapital: true,
+    kind: "stronghold", focus: FOCUS_EUROPE, script: { type: "city", code: "DE", capital: "Berlin" }, target: "DE", button: `Stronghold (${rules.cityCost})`, needsCapital: true,
     hints: {
       wrongCapital: wrongCapitalOf,
       notOwned: "You can only build strongholds in countries you own.",
@@ -85,7 +99,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "takeover", heading: "Take over",
     text: `Take over a rival's country that touches yours for ${rules.annexCost}, if they have at least your points. Name its capital city.`,
-    kind: "takeOver", script: { type: "annex", code: "ES", capital: "Madrid" }, target: "ES", button: `Take over (${rules.annexCost})`, needsCapital: true,
+    kind: "takeOver", focus: FOCUS_EUROPE, script: { type: "annex", code: "ES", capital: "Madrid" }, target: "ES", button: `Take over (${rules.annexCost})`, needsCapital: true,
     hints: {
       protectedStartingCapital: "Home countries can't be taken over. Pick another rival country.",
       protectedFoothold: "Outposts can't be taken over. Pick another rival country.",
@@ -99,7 +113,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "end", heading: "End your turn",
     text: "Press End turn to pass play on. Each round, everyone takes one turn.",
-    kind: "endTurn", script: { type: "endTurn" }, target: null, button: "End turn", needsCapital: false, hints: {},
+    kind: "endTurn", focus: FOCUS_EUROPE, script: { type: "endTurn" }, target: null, button: "End turn", needsCapital: false, hints: {},
     done: (state) => state.turn?.playerId === RIVAL,
   },
 ];
