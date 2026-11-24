@@ -58,6 +58,18 @@ export const TURN_CAS_SCRIPT = `
   return cjson.encode({ok=true})
 `;
 
+/** Compare-and-set for starting a room: writes ARGV[2] only while the room is still waiting with the same number of players (ARGV[1]), so a join or a second Start can't be overwritten. */
+export const START_CAS_SCRIPT = `
+  local raw = redis.call('GET', KEYS[1])
+  if not raw then return cjson.encode({error='Room not found. Check the code.'}) end
+  local room = cjson.decode(raw)
+  if room.status ~= 'waiting' or #room.players ~= tonumber(ARGV[1]) then
+    return cjson.encode({conflict=true})
+  end
+  redis.call('SET', KEYS[1], ARGV[2], 'EX', tonumber(ARGV[3]))
+  return cjson.encode({ok=true})
+`;
+
 let rngForTests: (() => number) | null = null;
 export function setTurnRngForTests(rng: (() => number) | null) { rngForTests = rng; }
 const rng = () => (rngForTests ?? Math.random)();
@@ -262,6 +274,14 @@ export async function commitTurnRoom(redis: Redis, key: string, expectedTurn: nu
   // Only the request whose compare-and-set succeeded writes the records it queued (see flushQueuedLog).
   if (ok && next.startedAt) await flushQueuedLog(redis, next, logIdOf(next.code, next.startedAt));
   return ok;
+}
+
+/** Writes the started room only if it is still waiting with `expectedPlayers` players. Returns "ok", "conflict" (someone joined or started meanwhile) or "missing". */
+export async function commitRoomStart(redis: Redis, key: string, expectedPlayers: number, next: object): Promise<"ok" | "conflict" | "missing"> {
+  const result = await redis.eval(START_CAS_SCRIPT, [key], [String(expectedPlayers), JSON.stringify(next), String(ROOM_TTL_SECONDS)]);
+  const parsed = (typeof result === "string" ? JSON.parse(result) : result) as { ok?: boolean; conflict?: boolean; error?: string };
+  if (parsed.ok) return "ok";
+  return parsed.error ? "missing" : "conflict";
 }
 
 /** Loads a turns room with timeouts applied (and persisted). */
