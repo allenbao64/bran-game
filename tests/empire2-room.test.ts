@@ -789,3 +789,27 @@ test("untimed-room-19 the log export carries turnMs null and the boom option", a
   assert.equal(log.turnMs, null);
   assert.equal(log.underdogBoomPick, true);
 });
+
+test("starting an untimed Empire 2.0 room with the boom pick through the route keeps both settings", async () => {
+  const host = await json(await postRoom({ action: "create", name: "Host", mode: "empire2", turnSeconds: 0, underdogBoomPick: true })) as Session;
+  const joiner = await json(await postRoom({ action: "join", code: host.code, name: "Brian" })) as Session;
+  const started = await postRoom({ action: "start", code: host.code, token: host.token, name: "Host" });
+  const body = await json(started);
+  assert.equal(started.status, 200, JSON.stringify(body));
+  assert.equal(body.mode, "empire2");
+  assert.equal(body.status, "playing");
+  assert.equal(body.turnSeconds, 0, "the start response keeps a 0 (no time limit) turn length");
+  assert.equal(body.players.length, 2);
+
+  const stored = await store.get<Record<string, any>>(roomKey(host.code)) as Record<string, any>;
+  assert.equal(stored.status, "playing");
+  assert.equal(stored.turnSeconds, 0);
+  assert.deepEqual(stored.empire2Options, { underdogBoomPick: true });
+  assert.equal(typeof stored.startedAt, "number");
+
+  const view = await getRoom(joiner);
+  assert.equal(view.turnSeconds, 0);
+  assert.equal(view.empire2.underdogBoomPick, true, "a started room reports the boom pick in its game view");
+  assert.equal(view.empire2.turnMs, null, "a 0 turn length is untimed for the game");
+  assert.equal(view.empire2.phase, "capital", "the first setup pick is waiting after the start");
+});
