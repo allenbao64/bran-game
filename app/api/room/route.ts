@@ -9,12 +9,14 @@ import {
   applyPass, commitRoomStart, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, logGameStart, logHostEnd, pickTurnStarts, runTurnAction, turnSnapshot, type TurnRoom
 } from "@/lib/turn-room";
 import { empireSnapshot, isEmpireRoom, loadSyncedEmpireRoom } from "@/lib/empire-room";
+import { DEFAULT_EMPIRE2_TURN_SECONDS, isEmpire2TurnSeconds } from "@/lib/empire2-playtest";
+import { empire2View, isEmpire2Room, loadSyncedEmpire2Room } from "@/lib/empire2-room";
 
 export const runtime = "nodejs";
 
 type Player = { id: string; token: string; name: string; host: boolean };
-type GameMode = "live" | "turns" | "empire";
-type Room = { code: string; gameId?: GameId; mode?: GameMode; turnSeconds?: number; rounds?: number; status: "waiting" | "playing" | "ended"; createdAt: number; startedAt: number | null; players: Player[] };
+type GameMode = "live" | "turns" | "empire" | "empire2";
+type Room = { code: string; gameId?: GameId; mode?: GameMode; turnSeconds?: number; rounds?: number; empire2Options?: { underdogBoomPick: boolean }; status: "waiting" | "playing" | "ended"; createdAt: number; startedAt: number | null; players: Player[] };
 const roomKey = (code: string) => `bran:room:${code}`;
 const cleanPlayer = (p: Player) => ({ id: p.id, name: p.name, host: p.host });
 const publicPlayers = (players: Player[]) => players.map(cleanPlayer);
@@ -40,15 +42,20 @@ export async function POST(request: NextRequest) {
     if (body.action === "create") {
       if (body.gameId !== undefined && !isGameId(body.gameId)) return error("Choose a game to create a room.");
       const gameId: GameId = isGameId(body.gameId) ? body.gameId : "countries";
-      if (body.mode !== undefined && body.mode !== "live" && body.mode !== "turns" && body.mode !== "empire") return error("Choose live, turns or empire mode.");
+      if (body.mode !== undefined && body.mode !== "live" && body.mode !== "turns" && body.mode !== "empire" && body.mode !== "empire2") return error("Choose live, turns or empire mode.");
       // Only Country Sprint has a turn-based mode; other games always run live.
-      const mode: GameMode = gameId === "countries" && (body.mode === "turns" || body.mode === "empire") ? body.mode : "live";
-      if (body.turnSeconds !== undefined && !isTurnSeconds(body.turnSeconds) && !isEmpireTurnSeconds(body.turnSeconds)) return error("Choose a valid turn speed.");
+      const mode: GameMode = gameId === "countries" && (body.mode === "turns" || body.mode === "empire" || body.mode === "empire2") ? body.mode : "live";
+      // Empire 2.0 speeds are checked below, so an Empire 2.0 room is not refused here for 20 or 45 seconds.
+      if (body.turnSeconds !== undefined && mode !== "empire2" && !isTurnSeconds(body.turnSeconds) && !isEmpireTurnSeconds(body.turnSeconds)) return error("Choose a valid turn speed.");
       // The speed only applies to turn-based and Empire rooms, each with its own options; live rooms and other games ignore it.
       if (mode === "turns" && body.turnSeconds !== undefined && !isTurnSeconds(body.turnSeconds)) return error("Choose a turn speed of 10, 15 or 25 seconds.");
       if (mode === "empire" && body.turnSeconds !== undefined && !isEmpireTurnSeconds(body.turnSeconds)) return error("Choose an Empire turn speed of 15, 20 or 30 seconds.");
+      if (mode === "empire2" && body.turnSeconds !== undefined && !isEmpire2TurnSeconds(body.turnSeconds)) return error("Choose a turn time of 20, 30 or 45 seconds, or no time limit.");
+      if (mode === "empire2" && body.underdogBoomPick !== undefined && typeof body.underdogBoomPick !== "boolean") return error("Choose whether the lowest player picks the boom region.");
       const turnSeconds = mode === "turns" ? (body.turnSeconds ?? DEFAULT_TURN_SECONDS) as number
-        : mode === "empire" ? (body.turnSeconds ?? DEFAULT_EMPIRE_TURN_SECONDS) as number : undefined;
+        : mode === "empire" ? (body.turnSeconds ?? DEFAULT_EMPIRE_TURN_SECONDS) as number
+        : mode === "empire2" ? (body.turnSeconds ?? DEFAULT_EMPIRE2_TURN_SECONDS) as number : undefined;
+      const empire2Options = mode === "empire2" ? { underdogBoomPick: body.underdogBoomPick === true } : undefined;
       if (body.rounds !== undefined && mode === "turns" && !isTurnRounds(body.rounds)) return error("Choose 15, 20 or 30 rounds.");
       const rounds = mode === "turns" ? (body.rounds ?? DEFAULT_TURN_ROUNDS) as number : undefined;
       const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -56,10 +63,10 @@ export async function POST(request: NextRequest) {
         const code = Array.from({ length: 6 }, () => alphabet[randomInt(alphabet.length)]).join("");
         const token = randomUUID() + randomUUID();
         const player: Player = { id: randomUUID(), token, name, host: true };
-        const room: Room = { code, gameId, mode, ...(turnSeconds ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
+        const room: Room = { code, gameId, mode, ...(turnSeconds !== undefined ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), ...(empire2Options ? { empire2Options } : {}), status: "waiting", createdAt: Date.now(), startedAt: null, players: [player] };
         const created = await redis.set(roomKey(code), room, { ex: ROOM_TTL_SECONDS, nx: true });
         if (created) return NextResponse.json({
-          code, gameId, mode, ...(turnSeconds ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), token, playerId: player.id, status: room.status,
+          code, gameId, mode, ...(turnSeconds !== undefined ? { turnSeconds } : {}), ...(rounds ? { rounds } : {}), token, playerId: player.id, status: room.status,
           startedAt: room.startedAt, players: publicPlayers(room.players)
         });
       }
@@ -106,7 +113,7 @@ export async function POST(request: NextRequest) {
         if (outcome === "conflict") continue; // someone joined or started meanwhile: re-read and validate again
         const players = publicPlayers(existing.players);
         if (turnsRoom) await logGameStart(redis, turnsRoom, { startedAt, players }, starts);
-        return NextResponse.json({ code, gameId: existing.gameId ?? "countries", mode: existing.mode ?? "live", ...(existing.turnSeconds && (isTurnsRoom(existing) || isEmpireRoom(existing)) ? { turnSeconds: existing.turnSeconds } : {}), ...(isTurnsRoom(existing) ? { rounds: existing.rounds ?? LEGACY_TURN_ROUNDS } : {}), status: "playing", startedAt, players });
+        return NextResponse.json({ code, gameId: existing.gameId ?? "countries", mode: existing.mode ?? "live", ...(existing.turnSeconds !== undefined && (isTurnsRoom(existing) || isEmpireRoom(existing) || isEmpire2Room(existing)) ? { turnSeconds: existing.turnSeconds } : {}), ...(isTurnsRoom(existing) ? { rounds: existing.rounds ?? LEGACY_TURN_ROUNDS } : {}), status: "playing", startedAt, players });
       }
       return error("The room just changed. Please try again.", 409);
     }
@@ -155,7 +162,9 @@ export async function POST(request: NextRequest) {
       if not raw then return cjson.encode({error='Room not found. Check the code.'}) end
       local room = cjson.decode(raw)
       if room.status ~= 'waiting' then return cjson.encode({error='That round has already started.'}) end
-      if #room.players >= 3 then return cjson.encode({error='This room is full.'}) end
+      local cap = 3
+      if room.mode == 'empire2' then cap = 4 end
+      if #room.players >= cap then return cjson.encode({error='This room is full.'}) end
       table.insert(room.players, {id=ARGV[1], token=ARGV[2], name=ARGV[3], host=false})
       redis.call('SET', KEYS[1], cjson.encode(room), 'EX', tonumber(ARGV[4]))
       local players = {}
@@ -168,7 +177,7 @@ export async function POST(request: NextRequest) {
     const joined = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; turnSeconds?: number; rounds?: number; status?: Room["status"]; startedAt?: number | null; players?: ReturnType<typeof publicPlayers> }>(result);
     if (joined.error) return error(joined.error);
     if (!joined.ok) return error("Could not join that room. Please try again.");
-    return NextResponse.json({ code, gameId: joined.gameId ?? "countries", mode: joined.mode ?? "live", ...(joined.turnSeconds ? { turnSeconds: joined.turnSeconds } : {}), ...(joined.mode === "turns" ? { rounds: joined.rounds ?? LEGACY_TURN_ROUNDS } : {}), token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
+    return NextResponse.json({ code, gameId: joined.gameId ?? "countries", mode: joined.mode ?? "live", ...(joined.turnSeconds !== undefined ? { turnSeconds: joined.turnSeconds } : {}), ...(joined.mode === "turns" ? { rounds: joined.rounds ?? LEGACY_TURN_ROUNDS } : {}), token, playerId, status: joined.status, startedAt: joined.startedAt, players: joined.players });
   } catch (cause) {
     console.error("Room POST failed:", cause);
     return error(`The room service is unavailable${errorDetail(cause)}. Try again in a moment.`, 503);
@@ -185,6 +194,18 @@ export async function GET(request: NextRequest) {
     if (!found) return error("Room not found. It may have expired.", 404);
     if (!found.players.some((player) => player.token === token)) return error("This browser is not in that room.", 403);
 
+    if (isEmpire2Room(found) && found.status !== "waiting") {
+      // Empire 2.0 rooms create the game on first read after the start and apply expired clocks lazily.
+      const now = Date.now();
+      const e2Room = await loadSyncedEmpire2Room(redis, roomKey(code), now);
+      if (!e2Room) return error("Room not found. It may have expired.", 404);
+      const mine = e2Room.players.find((player) => player.token === token)!;
+      return NextResponse.json({
+        code: e2Room.code, gameId: "countries", mode: "empire2", status: e2Room.status, startedAt: e2Room.startedAt,
+        players: publicPlayers(e2Room.players), playerId: mine.id, turnSeconds: e2Room.turnSeconds ?? DEFAULT_EMPIRE2_TURN_SECONDS,
+        myGuesses: [], lockedCountryCodes: [], countryClaims: {}, empire2: empire2View(e2Room, now, mine.id)
+      });
+    }
     if (isEmpireRoom(found) && found.status !== "waiting") {
       // Empire rooms create the game on first read after the start, then apply expired turns lazily.
       const now = Date.now();
@@ -239,6 +260,8 @@ export async function GET(request: NextRequest) {
     response.mode = room.mode ?? "live";
     if (isTurnsRoom(room)) { response.turnSeconds = room.turnSeconds ?? DEFAULT_TURN_SECONDS; response.rounds = room.rounds ?? LEGACY_TURN_ROUNDS; }
     if (isEmpireRoom(room)) response.turnSeconds = room.turnSeconds ?? DEFAULT_EMPIRE_TURN_SECONDS;
+    if (isEmpire2Room(room)) response.turnSeconds = room.turnSeconds ?? DEFAULT_EMPIRE2_TURN_SECONDS;
+    if (isEmpire2Room(room)) response.underdogBoomPick = room.empire2Options?.underdogBoomPick === true;
     if (room.status === "ended") {
       const results = await Promise.all(room.players.map(async (player) => {
         const guesses = await redis.hgetall<Record<string, string>>(`bran:guesses:${code}:${player.id}`) ?? {};

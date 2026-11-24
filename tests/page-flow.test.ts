@@ -100,6 +100,14 @@ test("the home page explains the game beside the room form", async () => {
   assert.equal(intro!.querySelector(".map-legend"), null, "the example map has no legend");
 });
 
+test("the home page names four modes", () => {
+  const doc = mount();
+  const text = doc.body.textContent ?? "";
+  assert.match(text, /four modes/);
+  assert.match(text, /2–4 players/);
+  assert.match(text, /Empire 2\.0/);
+});
+
 test("the game lobby offers Overwatch Hero Sprint", async () => {
   const doc = mount();
   const heroOption = [...doc.querySelectorAll<HTMLButtonElement>(".game-option")].find((button) => button.textContent?.includes("Overwatch Hero Sprint"));

@@ -44,3 +44,11 @@ export const dragSpeed = (k: number) => Math.min(2.5, 1 + (k - 1) * 0.5);
 /** Flick momentum: velocity (map px per ms) decays each frame; below this speed the glide stops. */
 export const GLIDE_DECAY = 0.92;
 export const GLIDE_MIN_SPEED = 0.02;
+
+/**
+ * A fixed framing: map point (cx, cy) at the centre of the frame, at scale k. Only the tutorial uses it, on a map with
+ * no pan or zoom controls, so k may be above MAX_ZOOM (a fixed frame has no zoom range to respect).
+ */
+export function centredView(cx: number, cy: number, k: number, width: number, height: number): MapView {
+  return { k, x: clamp(width / 2 - cx * k, width - width * k, 0), y: clamp(height / 2 - cy * k, height - height * k, 0) };
+}

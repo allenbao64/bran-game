@@ -5,3 +5,6 @@ out
 !.env.example
 .DS_Store
 .vercel
+
+# Phase 2 bot simulation output (never committed)
+scripts/empire2-sim/out/
