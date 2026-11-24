@@ -182,33 +182,13 @@ export class MemoryRedis {
       this.values.set(key, JSON.parse(args[1]));
       return { ok: true };
     }
-    if (script.includes("Only the host can start this round.")) {
-      if (!room) return { error: "Room not found. Check the code." };
-      const host = room.players.find((player) => player.token === args[0]);
-      if (!host?.host) return { error: "Only the host can start this round." };
-      if (room.status !== "waiting") return { error: "This round has already started." };
-      if (room.players.length < 2) return { error: "At least two players must join before starting." };
-      room.status = "playing";
-      room.startedAt = Number(args[1]);
-      if (room.mode === "turns" && args[3]) {
-        // Mirrors the start script: one 0-point round-0 claim per player from the starts list, and the first card seeds the card history.
-        room.turn = { ...JSON.parse(args[3]), order: room.players.map((player) => player.id) };
-        const starts = JSON.parse(args[4] || "[]") as string[];
-        room.claims = [];
-        room.startCountries = {};
-        room.players.forEach(({ id }, index) => {
-          if (!starts[index]) return;
-          room.claims!.push({ code: starts[index], playerId: id, points: 0, round: 0, turn: -1, at: Number(args[1]) });
-          room.startCountries![id] = starts[index];
-        });
-        room.recentCards = [...((room.turn as { deal?: unknown[] }).deal ?? [])];
-        room.recentGuesses = [];
-      }
-      await this.set(key, room);
-      return {
-        ok: true, gameId: room.gameId ?? "countries", mode: room.mode ?? "live", status: room.status, startedAt: room.startedAt,
-        players: room.players.map(({ id, name, host: isHost }) => ({ id, name, host: isHost }))
-      };
+    if (script.includes("#room.players ~= tonumber(ARGV[1])")) {
+      // Compare-and-set for starting a room, mirroring START_CAS_SCRIPT.
+      const current = this.values.get(key) as StoredRoom | undefined;
+      if (!current) return { error: "Room not found. Check the code." };
+      if (current.status !== "waiting" || current.players.length !== Number(args[0])) return { conflict: true };
+      this.values.set(key, JSON.parse(args[1]));
+      return { ok: true };
     }
 
     if (script.includes("Only the host can end this round.")) {
