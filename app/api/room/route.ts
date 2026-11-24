@@ -6,7 +6,7 @@ import { gameConfig, isGameId, type GameId } from "@/lib/games";
 import { DEFAULT_TURN_ROUNDS, DEFAULT_TURN_SECONDS, isStartClaim, isTurnRounds, isTurnSeconds, LEGACY_TURN_ROUNDS } from "@/lib/turn-rules";
 import { DEFAULT_EMPIRE_TURN_SECONDS, isEmpireTurnSeconds } from "@/lib/empire/types";
 import {
-  applyPass, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, logGameStart, logHostEnd, pickTurnStarts, runTurnAction, turnSnapshot, type TurnRoom
+  applyPass, commitRoomStart, initialTurnState, isTurnsRoom, loadSyncedTurnRoom, logGameStart, logHostEnd, pickTurnStarts, runTurnAction, turnSnapshot, type TurnRoom
 } from "@/lib/turn-room";
 import { empireSnapshot, isEmpireRoom, loadSyncedEmpireRoom } from "@/lib/empire-room";
 
@@ -73,56 +73,42 @@ export async function POST(request: NextRequest) {
 
     if (body.action === "start") {
       if (typeof body.token !== "string" || body.token.length < 32) return error("Room session is invalid.", 401);
-      const script = `
-        local raw = redis.call('GET', KEYS[1])
-        if not raw then return cjson.encode({error='Room not found. Check the code.'}) end
-        local room = cjson.decode(raw)
-        local host = nil
-        for _, player in ipairs(room.players) do
-          if player.token == ARGV[1] then host = player end
-        end
-        if not host or not host.host then return cjson.encode({error='Only the host can start this round.'}) end
-        if room.status ~= 'waiting' then return cjson.encode({error='This round has already started.'}) end
-        if #room.players < 2 then return cjson.encode({error='At least two players must join before starting.'}) end
-        room.status = 'playing'
-        room.startedAt = tonumber(ARGV[2])
-        if room.mode == 'turns' and ARGV[4] ~= '' then
-          local turn = cjson.decode(ARGV[4])
-          local order = {}
-          for _, player in ipairs(room.players) do table.insert(order, player.id) end
-          turn.order = order
-          room.turn = turn
-          room.claims = {}
-          room.startCountries = {}
-          local starts = cjson.decode(ARGV[5])
-          for index, id in ipairs(order) do
-            if starts[index] then
-              table.insert(room.claims, {code=starts[index], playerId=id, points=0, round=0, turn=-1, at=tonumber(ARGV[2])})
-              room.startCountries[id] = starts[index]
-            end
-          end
-          room.recentCards = {}
-          for _, dealt in ipairs(turn.deal) do table.insert(room.recentCards, dealt) end
-          room.recentGuesses = {}
-        end
-        redis.call('SET', KEYS[1], cjson.encode(room), 'EX', tonumber(ARGV[3]))
-        local players = {}
-        for _, player in ipairs(room.players) do
-          table.insert(players, {id=player.id, name=player.name, host=player.host})
-        end
-        return cjson.encode({ok=true, gameId=room.gameId or 'countries', mode=room.mode or 'live', status=room.status, startedAt=room.startedAt, players=players})
-      `;
-      const startedAt = Date.now();
-      const existing = await redis.get<Room>(key);
-      const turnsRoom = existing && isTurnsRoom(existing) ? existing : null;
-      const starts = turnsRoom ? pickTurnStarts(turnsRoom.players.length) : [];
-      const turnJson = turnsRoom ? JSON.stringify(initialTurnState(["pending"], startedAt, turnsRoom.turnSeconds, turnsRoom.rounds ?? LEGACY_TURN_ROUNDS, starts)) : "";
-      const result = await redis.eval(script, [key], [body.token, String(startedAt), String(ROOM_TTL_SECONDS), turnJson, JSON.stringify(starts)]);
-      const started = parseScriptResult<{ error?: string; ok?: boolean; gameId?: GameId; mode?: GameMode; status?: Room["status"]; startedAt?: number; players?: ReturnType<typeof publicPlayers> }>(result);
-      if (started.error) return error(started.error);
-      if (!started.ok) return error("Could not start this round. Please try again.");
-      if (turnsRoom && started.startedAt && started.players) await logGameStart(redis, turnsRoom, { startedAt: started.startedAt, players: started.players }, starts);
-      return NextResponse.json({ code, gameId: started.gameId ?? "countries", mode: started.mode ?? "live", ...(existing?.turnSeconds && (isTurnsRoom(existing) || isEmpireRoom(existing)) ? { turnSeconds: existing.turnSeconds } : {}), ...(existing && isTurnsRoom(existing) ? { rounds: existing.rounds ?? LEGACY_TURN_ROUNDS } : {}), status: started.status, startedAt: started.startedAt, players: started.players });
+      // Read, validate and build the started room here, then commit it with a compare-and-set (no JSON encoding inside Lua).
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const existing = await redis.get<Room>(key);
+        if (!existing) return error("Room not found. Check the code.");
+        const host = existing.players.find((player) => player.token === body.token);
+        if (!host || !host.host) return error("Only the host can start this round.");
+        if (existing.status !== "waiting") return error("This round has already started.");
+        if (existing.players.length < 2) return error("At least two players must join before starting.");
+
+        const startedAt = Date.now();
+        const turnsRoom = isTurnsRoom(existing) ? existing as TurnRoom : null;
+        const starts = turnsRoom ? pickTurnStarts(turnsRoom.players.length) : [];
+        const next: Room & Partial<TurnRoom> = { ...existing, status: "playing", startedAt };
+        if (turnsRoom) {
+          const order = existing.players.map((player) => player.id);
+          const turn = initialTurnState(order, startedAt, turnsRoom.turnSeconds, turnsRoom.rounds ?? LEGACY_TURN_ROUNDS, starts);
+          next.turn = { ...turn, order };
+          next.claims = [];
+          next.startCountries = {};
+          order.forEach((id, index) => {
+            if (!starts[index]) return;
+            next.claims!.push({ code: starts[index], playerId: id, points: 0, round: 0, turn: -1, at: startedAt });
+            next.startCountries![id] = starts[index];
+          });
+          next.recentCards = [...(turn.deal ?? [])];
+          next.recentGuesses = [];
+        }
+
+        const outcome = await commitRoomStart(redis, key, existing.players.length, next);
+        if (outcome === "missing") return error("Room not found. Check the code.");
+        if (outcome === "conflict") continue; // someone joined or started meanwhile: re-read and validate again
+        const players = publicPlayers(existing.players);
+        if (turnsRoom) await logGameStart(redis, turnsRoom, { startedAt, players }, starts);
+        return NextResponse.json({ code, gameId: existing.gameId ?? "countries", mode: existing.mode ?? "live", ...(existing.turnSeconds && (isTurnsRoom(existing) || isEmpireRoom(existing)) ? { turnSeconds: existing.turnSeconds } : {}), ...(isTurnsRoom(existing) ? { rounds: existing.rounds ?? LEGACY_TURN_ROUNDS } : {}), status: "playing", startedAt, players });
+      }
+      return error("The room just changed. Please try again.", 409);
     }
 
     if (body.action === "end") {
